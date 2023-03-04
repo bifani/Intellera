@@ -3,7 +3,6 @@ from textwrap import indent
 
 
 class ArbitraryDocString:
-
     # Note that regexes that are truncations of other regexes need to appear
     # later in the alternatives list, eg.
     #   re.search(r'a|ab', 'ab').group() -> 'a'

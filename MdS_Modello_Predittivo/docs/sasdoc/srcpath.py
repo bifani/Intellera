@@ -4,7 +4,6 @@ from pathlib import Path
 
 
 class ReSTPath:
-
     REST_EXT = ".rst"
 
     def __init__(self, reST_path):
@@ -25,7 +24,6 @@ class ReSTPath:
 
 
 class SrcPath(ReSTPath):
-
     SAS_EXT = ".sas"  # also used by traversedir, sort this shit out
 
     def __init__(self, sas_src_path):

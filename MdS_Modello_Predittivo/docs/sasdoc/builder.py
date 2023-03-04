@@ -12,7 +12,6 @@ from macrolib import MacroLib
 
 
 class Builder:
-
     __ROOT_STEM = "index"
 
     def __init__(self, dir_path):
@@ -20,7 +19,6 @@ class Builder:
         self._dir_path = dir_path
 
     def write_reST_files(self, dst_dir):
-
         for src in self._srcs:
             # check if we actually have a SAS file? Eh..
 

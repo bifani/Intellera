@@ -1,5 +1,4 @@
 def search_dir_for_extension(dir_path, ext=""):
-
     if ext and ext[0] != ".":
         ext = "." + ext
 
@@ -12,5 +11,4 @@ def search_dir_for_extension(dir_path, ext=""):
 
 
 def search_dir_for_sas(dir_path):
-
     return search_dir_for_extension(dir_path, ext=".sas")

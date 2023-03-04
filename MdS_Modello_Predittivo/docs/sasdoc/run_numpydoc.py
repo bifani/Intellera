@@ -1,7 +1,7 @@
 from numpydoc import NumpyDocString
 from sphinxdoc import SphinxDocString
 
-s = """
+s = r"""
 Processes a dataset and produces CAs.
 1. Runs %findmiss(); to eliminate useless fields
 2. Splits fields into numeric and character

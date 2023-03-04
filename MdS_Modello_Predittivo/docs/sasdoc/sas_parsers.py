@@ -20,7 +20,6 @@ _LONG_CMMT_RE = re.compile(r"/\*(.*?)\*/", re.MULTILINE | re.DOTALL)
 
 
 class MacroSignature:
-
     # this holds the parameters as well as the name
     def __init__(self, sign_str):
         pass
@@ -30,7 +29,6 @@ class MacroSignature:
 
 
 def parse_signature(s):
-
     signature_match = _SIGNATURE_RE.search(s)
 
     if signature_match is None:
@@ -74,7 +72,6 @@ def simple_sas_2_rst(sas_src):
 
 
 def sas_source_2_rst(sas_src):
-
     macro_lib = MacroLib()
 
     currpos = 0

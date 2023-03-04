@@ -5,7 +5,6 @@ from builder import Builder
 
 
 if __name__ == "__main__":
-
     src_dir = Path(sys.argv[1])
 
     builder = Builder(src_dir)

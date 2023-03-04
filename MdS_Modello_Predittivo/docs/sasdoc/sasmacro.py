@@ -5,7 +5,6 @@ from simpledocstrings import VerbatimDocString
 
 
 class SASMacro:
-
     _NUMPYDOC_PREFIX = "*DOC**"
     _reST_PREFIX = "*reST**"
 

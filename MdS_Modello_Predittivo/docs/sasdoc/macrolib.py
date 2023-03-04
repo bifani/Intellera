@@ -17,7 +17,6 @@ class MacroLib:
         return self
 
     def make_reST(self):
-
         head = ""
         if self._lib_title is not None:
             head = self._lib_title + "\n" + ("=" * len(self._lib_title)) + "\n\n"
