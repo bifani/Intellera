@@ -1,0 +1,85 @@
+name: Python Actions
+
+on: [push]
+
+jobs:
+
+  setup:
+    runs-on: ubuntu-latest
+    strategy:
+      max-parallel: 5
+    steps:
+    - uses: actions/checkout@v2
+    - uses: actions/cache@v2
+      with:
+        path: |
+          /home/runner/.conda
+          /usr/share/miniconda
+        key: ama-python-${{ hashFiles('config/environment.yml') }}
+        restore-keys: ama-python-${{ hashFiles('config/environment.yml') }}
+    - name: Create conda environment
+      run: |
+        source /usr/share/miniconda/etc/profile.d/conda.sh
+        if [ ! -d /usr/share/miniconda/envs/ama ]; then
+          conda env create --file config/environment.yml;
+        fi
+
+  pre-commit:
+    needs: setup
+    runs-on: ubuntu-latest
+    strategy:
+      max-parallel: 5
+    steps:
+    - uses: actions/checkout@v2
+    - uses: actions/cache@v2
+      with:
+        path: |
+          /home/runner/.conda
+          /usr/share/miniconda
+        key: ama-python-${{ hashFiles('config/environment.yml') }}
+        restore-keys: ama-python-${{ hashFiles('config/environment.yml') }}
+    - name: Run pre-commit
+      run: |
+        source /usr/share/miniconda/etc/profile.d/conda.sh
+        conda activate ama
+        pre-commit run --all-files
+
+  pytest:
+    needs: setup
+    runs-on: ubuntu-latest
+    strategy:
+      max-parallel: 5
+    steps:
+    - uses: actions/checkout@v2
+    - uses: actions/cache@v2
+      with:
+        path: |
+          /home/runner/.conda
+          /usr/share/miniconda
+        key: ama-python-${{ hashFiles('config/environment.yml') }}
+        restore-keys: ama-python-${{ hashFiles('config/environment.yml') }}
+    - name: Run pytest
+      run: |
+        source /usr/share/miniconda/etc/profile.d/conda.sh
+        conda activate ama
+        pytest --cov=src --full-trace -v src/tests/
+
+#  sphinx:
+#    needs: setup
+#    runs-on: ubuntu-latest
+#    strategy:
+#      max-parallel: 5
+#    steps:
+#    - uses: actions/checkout@v2
+#    - uses: actions/cache@v2
+#      with:
+#        path: |
+#          /home/runner/.conda
+#          /usr/share/miniconda
+#        key: ama-python-${{ hashFiles('config/environment.yml') }}
+#        restore-keys: ama-python-${{ hashFiles('config/environment.yml') }}
+#    - name: Run pytest
+#      run: |
+#        source /usr/share/miniconda/etc/profile.d/conda.sh
+#        conda activate ama
+#        ./scripts/deploy.sh

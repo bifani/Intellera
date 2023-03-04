@@ -1,0 +1,40 @@
+name: ama
+channels:
+  - conda-forge
+  - defaults
+dependencies:
+  - python=3.9.13
+  - icecream=2.1.3
+  - pre-commit=2.20.0
+  - pytest=7.2.0
+  - pytest-cov=4.0.0
+  - coverage=6.5.0
+  - nb_black=1.0.7
+  - sphinx=5.3.0
+  - sphinx_rtd_theme=1.1.1
+  - jupyter=1.0.0
+  - jupyterlab=3.5.0
+  - jupyter_contrib_nbextensions=0.5.1
+  - numpy=1.22.4
+  - pandas=1.5.1
+  - openpyxl=3.0.10
+  - odfpy=1.4.1
+  - pandarallel=1.6.4
+  - thefuzz=0.19.0
+  - scipy=1.7.1
+  - scikit-learn=1.1.3
+  - matplotlib==3.5.3
+  - seaborn=0.12.1
+  - plotly=5.11.0
+  - altair=4.2.0
+  - dabl=0.2.2
+  - dataprep=0.4.5
+  - dtale=2.9.0
+  - sidetable=0.9.0
+  - yellowbrick=1.5
+  - eli5=0.13.0
+  - lime=0.2.0.1
+  - shap=0.41.0
+  - pip
+  - pip:
+    - autoimpute==0.13.0
