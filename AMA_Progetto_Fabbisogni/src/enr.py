@@ -617,11 +617,6 @@ class ENR_UTENZE(DataFactory):
                         | (self.df["FLAG_ESENTE"] == 1)
                     ) & ((self.df["FLAG_BOLLETTINO_WEB"] == 1) | (self.df["FLAG_BOLLETTINO_CC"] == 1))
 
-            # if "IMPORTO_CONTRATTO" in self.columns:
-            #     self.df["IMPORTO_CONTRATTO_NO_TEFA"] = self.df["IMPORTO_CONTRATTO"] * 100 / 105
-            # if "IMPORTO_PAREGGIO" in self.columns:
-            #     self.df["IMPORTO_PAREGGIO_NO_TEFA"] = self.df["IMPORTO_PAREGGIO"] * 100 / 105
-
             if "IMPORTO_CONTRATTO" in self.columns and "IMPORTO_PAREGGIO" in self.columns:
                 self.df["PERCENTUALE_NON_PAGATO"] = (
                     self.df["IMPORTO_CONTRATTO"] - self.df["IMPORTO_PAREGGIO"]
@@ -630,17 +625,6 @@ class ENR_UTENZE(DataFactory):
                 self.df["FLAG_PAGATO"] = 0
                 self.df.loc[self.df["IMPORTO_CONTRATTO"] == self.df["IMPORTO_PAREGGIO"], "FLAG_PAGATO"] = 1
                 self.df.loc[self.df["IMPORTO_CONTRATTO"] == 0, "FLAG_PAGATO"] = 0
-
-            # if "TIPO_DOC_PAREGGIO" in self.columns:
-            #     self.df["TIPO_DOC_PAREGGIO"].fillna("NA", inplace=True)
-            # if "MOTIVO_PAREGGIO" in self.columns:
-            #     self.df["MOTIVO_PAREGGIO"].fillna("NA", inplace=True)
-            # if "NUM_CIR" in self.columns:
-            #     self.df["NUM_CIR"].fillna("NA", inplace=True)
-            # if "COD_ZON_URB" in self.columns:
-            #     self.df["COD_ZON_URB"].fillna("NA", inplace=True)
-            # if "CAP" in self.columns:
-            #     self.df["CAP"].fillna("NA", inplace=True)
 
             self.update()
             self.check_data()
@@ -769,19 +753,16 @@ class ENR_UTENZE(DataFactory):
         func = {
             "IMPORTO_CONTRATTO": ["count", "sum", "median", "mean", "std", "min", "max"],
             "IMPORTO_PAREGGIO": ["count", "sum", "median", "mean", "std", "min", "max"],
-            # "MOTIVO_PAREGGIO": ["count"],
         }
         df = df.groupby("NUM_CIR").agg(func)
 
         df[("count", "P/C")] = df[("IMPORTO_PAREGGIO", "count")] / df[("IMPORTO_CONTRATTO", "count")]
         df[("count", "P")] = df[("IMPORTO_PAREGGIO", "count")] / df[("IMPORTO_PAREGGIO", "count")].sum()
         df[("count", "C")] = df[("IMPORTO_CONTRATTO", "count")] / df[("IMPORTO_CONTRATTO", "count")].sum()
-        # df[("count", "P / C")] = df[("count", "P")] / df[("count", "C")]
 
         df[("sum", "P/C")] = df[("IMPORTO_PAREGGIO", "sum")] / df[("IMPORTO_CONTRATTO", "sum")]
         df[("sum", "P")] = df[("IMPORTO_PAREGGIO", "sum")] / df[("IMPORTO_PAREGGIO", "sum")].sum()
         df[("sum", "C")] = df[("IMPORTO_CONTRATTO", "sum")] / df[("IMPORTO_CONTRATTO", "sum")].sum()
-        # df[("sum", "P / C")] = df[("sum", "P")] / df[("sum", "C")]
 
         self.df["IMPORTO_PAREGGIO"].fillna(0, inplace=True)
 
@@ -831,15 +812,6 @@ class ENR_UTENZE(DataFactory):
             df.merge_GE_TERRIT()
             self.logger.info("")
             self.logger.info("Merge")
-            # LEFT JOIN
-            # self.df = self.merge(
-            #     df.df,
-            #     lcolumns=["UTZ_VIA_DES"],
-            #     rcolumns=["DSC_VIA"],
-            #     how="left",
-            #     datafactory=False,
-            #     silent=self.silent,
-            # )
             # RANGE JOIN
             # query = "SELECT * FROM df0 LEFT JOIN df1 ON df0.UTZ_VIA_DES = df1.DSC_VIA AND df0.DSC_VIA BETWEEN df1.LIM_CIV_DA and df1.LIM_CIV_A"
             query = "SELECT * FROM df0 LEFT JOIN df1 ON df0.UTZ_VIA_DES = df1.DSC_VIA AND df0.UTZ_NUM_CIV >= df1.LIM_CIV_DA and df0.UTZ_NUM_CIV < df1.LIM_CIV_A"
@@ -1479,9 +1451,7 @@ class ENR_NDOM(ENR_UTENZE):
             self.df["FLAG_PEC_INV"].fillna(0, inplace=True)
             self.df.loc[self.df["FLAG_PEC_INV"] == 2, "FLAG_PEC_INV"] = 1
             self.df["FLAG_NOPEC"] = (self.df["FLAG_PEC_SAP"] == 0) | (self.df["FLAG_PEC_INV"] == 0)
-            # self.df.loc[self.df["FLAG_PEC_INV"] == 2, "FLAG_NOPEC"] = False
             self.df["FLAG_PEC"] = (self.df["FLAG_PEC_SAP"] == 1) | (self.df["FLAG_PEC_INV"] == 1)
-            # self.df.loc[self.df["FLAG_PEC_INV"] == 2, "FLAG_PEC"] = True
             self.drop_columns(["NUMERO_FATTURA"])
             self.update()
             self.print()
@@ -2022,7 +1992,7 @@ class ENR_PAGAMENTI_BONIFICI(DataFactory):
             "SOGG": "string",
             "NOTE": "string",
         }
-        # self.parse_dates = {"DT_REG": "%d-%b-%y", "DT_PG": "%d-%b-%y"}  # LOCALE IT
+        self.parse_dates = {"DT_REG": "%d-%b-%y", "DT_PG": "%d-%b-%y"}  # LOCALE IT
         super().__init__(
             df=f"{BASE_FOLDER_ENR}/{SQLITE_DB} | BONIF_TARI_export",
             keys=["ID"],
