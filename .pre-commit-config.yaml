@@ -33,7 +33,7 @@ repos:
         args: ['--line-length=120']
 
   - repo: 'https://github.com/pycqa/flake8'
-    rev: 4.0.1
+    rev: 6.0.0
     hooks:
       - id: flake8
         args: ['--ignore=E203,E266,E402,E501,W503,F401,F403', # https://lintlyci.github.io/Flake8Rules/
@@ -42,11 +42,11 @@ repos:
                '--select=B,C,E,F,W,T4,B9']
 
   - repo: 'https://github.com/pycqa/pydocstyle'
-    rev: 6.1.1
+    rev: 6.3.0
     hooks:
       - id: pydocstyle
         args: ['--convention=numpy',
-               '--add-ignore=D200']
+               '--add-ignore=D100,D104,D200']
 
   - repo: https://github.com/asottile/pyupgrade
     rev: v3.3.1

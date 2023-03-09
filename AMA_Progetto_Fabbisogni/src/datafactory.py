@@ -78,27 +78,20 @@ class DataFactory(ABC):
         self.df = df
         self.df_bkp = None
         self.file = None
+        self.ext = "pkl"
+        self.compression = "zip"
 
         self.columns = None
         self.types = None
         self.dbltypes = None
         self.dtypes = None
-
         self.keys = keys
 
-        self.label = label
-        self.is_continuous = None
+        self.label = None
         self.classes = None
         self.is_binary = None
+        self.is_continuous = None
         self.features = None
-
-        self.nans = None
-        self.dups = None
-
-        self.X = self.y = None, None
-        self.is_split_Xy = False
-        self.X_train = self.X_test = self.y_train = self.y_test = None, None, None, None
-        self.is_split_tt = False
 
         self.silent = silent
         self.verbose = verbose
@@ -107,8 +100,20 @@ class DataFactory(ABC):
         self.kwargs = kwargs
         self.options = dict()
 
-        self.ext = "pkl"
-        self.compression = "zip"
+        self.nans = None
+        self.dups = None
+
+        self.X = self.y = None
+        self.X_train = self.y_train = None
+        self.X_valid = self.y_valid = None
+        self.X_test = self.y_test = None
+        self.is_split_Xy = False
+        self.is_split_tt = False
+        self.is_split_tvt = False
+
+        self.data = "df"
+        self.data_Xy = None
+        self.data_tt = None
 
         self.name = type(self).__name__
         self.logger = None
@@ -148,6 +153,7 @@ class DataFactory(ABC):
         self.df.drop(columns=self.df.columns[self.df.columns.str.contains("Unnamed")])
         self.detect_columns()
         self.detect_types()
+        self.set_label(label)
 
         if any([pre_process, process, post_process]) and not silent:
             self.print()
@@ -315,10 +321,19 @@ class DataFactory(ABC):
 
         :param str label
         """
-        self.label = label
-        self.split_Xy()
-        self.split_tt()
-        self.print_size()
+        if label is not None:
+            self.label = label
+        if self.label is not None:
+            if isinstance(self.label, list):
+                self.is_continuous = False
+                for t in self.label:
+                    self.types.drop(index=[t], inplace=True)
+            elif self.label in self.types.index:
+                self.is_continuous = True if self.types["float"][self.label] else False
+                self.types.drop(index=[self.label], inplace=True)
+            self.classes = sorted(list(np.unique(self.df[self.label])))
+            self.is_binary = True if len(self.classes) == 2 else False
+            self.detect_columns()
 
     def load(self):  # NOQA C901
         """
@@ -816,9 +831,9 @@ class DataFactory(ABC):
             df.drop([c1], axis=1, inplace=True)
             return df
 
-        if "datetime" in self.types and "timedelta" in self.types:
+        if self.types["datetime"].any() and self.types["timedelta"].any():
             self.types = combine(self.types, "datetime", "timedelta")
-        if "object" in self.types and "string" in self.types:
+        if self.types["object"].any() and self.types["string"].any():
             self.types = combine(self.types, "object", "string")
 
         self.dtypes = self.df.dtypes.apply(lambda x: x.name).to_dict()
@@ -1160,7 +1175,7 @@ class DataFactory(ABC):
         self.detect_types()
         self.detect_columns()
 
-    def get_data(self, type: str):
+    def get_data(self, type: str):  # NOQA C901
         """
         Get data.
 
@@ -1169,12 +1184,20 @@ class DataFactory(ABC):
         """
         ic()
 
-        if type == "Xy":
+        if type is None:
+            raise ValueError(f"Invalid data type: {type}")
+        elif type == "Xy":
             if not self.is_split_Xy:
                 raise ValueError("No X/y split")
-        if "train" in type or "test" in type or "split" in type or type == "Xy_tt":
+        elif "train" in type or "test" in type or "Xy_tt" in type:
             if not self.is_split_tt:
-                raise ValueError("No train/test split")
+                raise ValueError("No Train/Test split")
+        elif "valid" in type or "Xy_tv" in type:
+            if not self.is_split_tvt:
+                raise ValueError("No Train/Validation/Test split")
+
+        self.logger.info("")
+        self.logger.info(f"Data type: {type}")
 
         if type == "df":
             return self.df
@@ -1182,16 +1205,22 @@ class DataFactory(ABC):
             return self.X, self.y
         elif type == "train":
             return self.X_train, self.y_train
+        elif type == "valid":
+            return self.X_valid, self.y_valid
         elif type == "test":
             return self.X_test, self.y_test
         elif type == "Xy_tt":
             return self.X_train, self.X_test, self.y_train, self.y_test
+        elif type == "Xy_tv":
+            return self.X_train, self.X_valid, self.y_train, self.y_valid
+        elif type == "Xy_tvt":
+            return self.X_train, self.X_valid, self.X_test, self.y_train, self.y_valid, self.y_test
         elif type == "dftrain":
             return pd.concat([self.X_train, self.y_train], axis=1)
+        elif type == "dfvalid":
+            return pd.concat([self.X_valid, self.y_valid], axis=1)
         elif type == "dftest":
             return pd.concat([self.X_test, self.y_test], axis=1)
-        elif type == "dfsplit":
-            return pd.concat([self.X_train, self.y_train], axis=1), pd.concat([self.X_test, self.y_test], axis=1)
 
         else:
             try:
@@ -1200,7 +1229,7 @@ class DataFactory(ABC):
                     X = self.df[self.get_columns(type)]
                 return X
             except Exception:
-                raise ValueError(f"Invalid data: {type}")
+                raise ValueError(f"Invalid data type: {type}")
 
     def check_data(self):
         """
@@ -1507,25 +1536,16 @@ class DataFactory(ABC):
 
         self.logger.info("")
         self.logger.info("Split X/y")
-        if label is not None:
-            self.label = label
-        if isinstance(self.label, list):
-            self.is_continuous = False
-            for t in self.label:
-                self.types.drop(index=[t], inplace=True)
-        elif self.label in self.types.index:
-            self.is_continuous = True if self.types["float"][self.label] else False
-            self.types.drop(index=[self.label], inplace=True)
+        self.set_label(label)
         if features is not None:
             self.features = features
         else:
             self.detect_columns()
         self.X = self.df[self.features]
         self.y = self.df[self.label]
-        self.classes = sorted(list(np.unique(self.y.values)))
-        self.is_binary = True if len(self.classes) == 2 else False
         self.print_columns()
         self.is_split_Xy = True
+        self.data_Xy = "train"
 
     def merge_Xy(self):
         """
@@ -1545,7 +1565,7 @@ class DataFactory(ABC):
 
     def split_tt(
         self,
-        test_size: float = 0.25,
+        train_size: float = 0.80,
         shuffle: bool = True,
         stratify: bool = False,
         train_index: int = None,
@@ -1555,7 +1575,7 @@ class DataFactory(ABC):
         """
         Split Train/Test.
 
-        :param float test_size: Proportion to include in test split
+        :param float train_size: Proportion to include in train split
         :param bool shuffle: Shuffle the data before splitting
         :param bool stratify: Split in a stratified fashion using the label
         :param int train_index: UpTo index
@@ -1564,27 +1584,29 @@ class DataFactory(ABC):
         """
         ic()
 
-        if not self.is_split_tt or force or "split_tt" in self.X.columns:
+        if not self.is_split_tt or force or "DATA_SPLIT" in self.X.columns:
             if not self.is_split_Xy:
                 raise ValueError("No X/y split")
 
             self.logger.info("")
-            if "split_tt" in self.X:
+            if "DATA_SPLIT" in self.X:
                 self.logger.info("ReSplit Train/Test")
                 # print((self.X_train))
-                self.X_train = self.X_train.query("split_tt == 'train'")
-                self.X_test = self.X_test.query("split_tt == 'test'")
+                self.X_train = self.X.query("DATA_SPLIT == 'train'")
+                self.X_test = self.X.query("DATA_SPLIT == 'test'")
                 self.y_train = self.y[self.X_train.index]
                 self.y_test = self.y[self.X_test.index]
             else:
-                self.logger.info(f"Split Train/Test: {test_size}")
+                self.logger.info(
+                    f"Split Train/Test: {train_size:.{self.options['precision']}f} / {1-train_size:.{self.options['precision']}f}"
+                )
                 if not train_index and not test_index:
                     from sklearn.model_selection import train_test_split
 
                     self.X_train, self.X_test, self.y_train, self.y_test = train_test_split(
                         self.X,
                         self.y,
-                        test_size=test_size,
+                        train_size=train_size,
                         shuffle=shuffle,
                         stratify=self.y if stratify else None,
                         random_state=self.options["random_state"],
@@ -1594,7 +1616,9 @@ class DataFactory(ABC):
                     self.X_test = self.X[test_index:]
                     self.y_train = self.y.loc[:train_index]
                     self.y_test = self.y.loc[test_index:]
-                self.is_split_tt = True
+
+            self.is_split_tt = True
+            self.data_tt = "Xy_tt"
 
             self.logger.info(f"Features: {self.X_train.shape} / {self.X_test.shape}")
             self.logger.info(f"Label:    {len(self.y_train)} / {len(self.y_test)}")
@@ -1607,13 +1631,144 @@ class DataFactory(ABC):
         """
         ic()
 
-        if "split_tt" not in self.X_train:
-            self.X_train["split_tt"] = "train"
-        if "" not in self.X_test:
-            self.X_test["split_tt"] = "test"
+        if "DATA_SPLIT" not in self.X_train:
+            self.X_train["DATA_SPLIT"] = "train"
+        if "DATA_SPLIT" not in self.X_test:
+            self.X_test["DATA_SPLIT"] = "test"
         self.X = pd.concat([self.X_train, self.X_test], axis=0)
-        self.X["split_tt"] = self.X["split_tt"].astype("category")
+        self.X["DATA_SPLIT"] = self.X["DATA_SPLIT"].astype("category")
         self.y = pd.concat([self.y_train, self.y_test], axis=0)
+        self.merge_Xy()
+
+    def split_tv(
+        self,
+        valid_size: float = 0.50,
+        shuffle: bool = True,
+        stratify: bool = False,
+        valid_index: int = None,
+        test_index: int = None,
+        force: bool = False,
+    ):
+        """
+        Split Test/Validation.
+
+        :param float valid_size: Proportion to include in validation split
+        :param bool shuffle: Shuffle the data before splitting
+        :param bool stratify: Split in a stratified fashion using the label
+        :param int valid_index: UpTo index
+        :param int test_index: DownTo index
+        :param bool force: Force splitting
+        """
+        ic()
+
+        if not self.is_split_tvt or force or "DATA_SPLIT" in self.X.columns:
+            if not self.is_split_Xy:
+                raise ValueError("No X/y split")
+            if not self.is_split_tt:
+                raise ValueError("No Train/Test split")
+
+            self.logger.info("")
+            if "DATA_SPLIT" in self.X:
+                self.logger.info("ReSplit Test/Validation")
+                self.X_train = self.X.query("DATA_SPLIT == 'train'")
+                self.X_valid = self.X.query("DATA_SPLIT == 'valid'")
+                self.X_test = self.X.query("DATA_SPLIT == 'test'")
+                self.y_train = self.y[self.X_train.index]
+                self.y_valid = self.y[self.X_valid.index]
+                self.y_test = self.y[self.X_test.index]
+            else:
+                self.logger.info(
+                    f"Split Test/Validation: {valid_size:.{self.options['precision']}f} / {1-valid_size:.{self.options['precision']}f}"
+                )
+                if not valid_index and not test_index:
+                    from sklearn.model_selection import train_test_split
+
+                    self.X_valid, self.X_test, self.y_valid, self.y_test = train_test_split(
+                        self.X_test,
+                        self.y_test,
+                        train_size=valid_size,
+                        shuffle=shuffle,
+                        stratify=self.y_test if stratify else None,
+                        random_state=self.options["random_state"],
+                    )
+                else:
+                    self.X_valid = self.X_test[:valid_index]
+                    self.X_test = self.X_test[test_index:]
+                    self.y_valid = self.y_test.loc[:valid_index]
+                    self.y_test = self.y_test.loc[test_index:]
+
+            self.is_split_tvt = True
+            self.data_tt = "Xy_tv"
+
+            self.logger.info(f"Features: {self.X_valid.shape} / {self.X_test.shape}")
+            self.logger.info(f"Label:    {len(self.y_valid)} / {len(self.y_test)}")
+        else:
+            raise ValueError("Already split Test/Validation")
+
+    def split_tvt(
+        self,
+        train_size: float = 0.80,
+        valid_size: float = 0.50,
+        shuffle: bool = True,
+        stratify: bool = False,
+        train_index: int = None,
+        valid_index: int = None,
+        test_index: int = None,
+        force: bool = False,
+    ):
+        """
+        Split Test/Validation.
+
+        :param float train_size: Proportion to include in train split
+        :param float valid_size: Proportion to include in validation split
+        :param bool shuffle: Shuffle the data before splitting
+        :param bool stratify: Split in a stratified fashion using the label
+        :param int train_index: UpTo index
+        :param int valid_index: UpTo index
+        :param int test_index: DownTo index
+        :param bool force: Force splitting
+        """
+        ic()
+
+        self.split_tt(
+            train_size=train_size,
+            shuffle=shuffle,
+            stratify=stratify,
+            train_index=train_index,
+            test_index=test_index,
+            force=force,
+        )
+        self.split_tv(
+            valid_size=valid_size,
+            shuffle=shuffle,
+            stratify=stratify,
+            valid_index=valid_index,
+            test_index=test_index,
+            force=force,
+        )
+
+        self.logger.info("")
+        self.logger.info(
+            f"{'Split' if 'DATA_SPLIT' not in self.X else 'ReSplit'} Train/Validation/Test: {train_size:.{self.options['precision']}f} / {(1-train_size)*valid_size:.{self.options['precision']}f} / {(1-train_size)*(1-valid_size):.{self.options['precision']}f}"
+        )
+        self.logger.info(f"Features: {self.X_train.shape} / {self.X_valid.shape} / {self.X_test.shape}")
+        self.logger.info(f"Label:    {len(self.y_train)} / {len(self.y_valid)} / {len(self.y_test)}")
+
+    def merge_tvt(self):
+        """
+        Merge Train/Validation/Test.
+        """
+        ic()
+
+        if "DATA_SPLIT" not in self.X_train:
+            self.X_train["DATA_SPLIT"] = "train"
+        if "DATA_SPLIT" not in self.X_valid:
+            self.X_valid["DATA_SPLIT"] = "valid"
+        if "DATA_SPLIT" not in self.X_test:
+            self.X_test["DATA_SPLIT"] = "test"
+        self.X = pd.concat([self.X_train, self.X_valid, self.X_test], axis=0)
+        self.X["DATA_SPLIT"] = self.X["DATA_SPLIT"].astype("category")
+        self.y = pd.concat([self.y_train, self.y_valid, self.y_test], axis=0)
         self.merge_Xy()
 
     def query(self, query: str, nrows: int = None, inplace: bool = True):
@@ -2093,7 +2248,7 @@ class DataFactory(ABC):
         elif data == "Xy_tt":
             X_train, X_test, y_train, y_test = self.get_data(data)
         else:
-            raise ValueError(f"Invalid data {data}")
+            raise ValueError(f"Invalid data type: {data}")
 
         X_train_columns = X_train[columns]
         X_test_columns = X_test[columns] if X_test is not None else None
@@ -2547,7 +2702,7 @@ class DataFactory(ABC):
             else:
                 display(df)
 
-    def column_best(self, data: str = "train", method: str = "chi2"):
+    def column_best(self, method: str = "chi2"):
         """
         Best columns.
 
@@ -2581,7 +2736,7 @@ class DataFactory(ABC):
         else:
             raise ValueError(f"Invalid method: {method}")
 
-        X, y = self.get_data(data)
+        X, y = self.get_data(self.data_Xy)
 
         from sklearn.preprocessing import MinMaxScaler
 
@@ -2688,7 +2843,7 @@ class DataFactory(ABC):
         :param int ntop: Top value_counts
         :param int logxy: Log x/y
         """
-        X = self.get_data("df")
+        X = self.get_data(self.data)
 
         if all:
             category = numeric = string = datetime = True
@@ -2755,16 +2910,16 @@ class DataFactory(ABC):
             self.logger.info(f"Classes:  {len(self.classes)} {self.classes}")
         else:
             self.logger.info(f"Classes:  {len(self.classes)} {self.y.dtype}")
-        self.logger.info(f"Mean:     {self.df[self.label].mean():.{self.options['precision']}}")
-        self.logger.info(f"Median:   {self.df[self.label].median():.{self.options['precision']}}")
-        self.logger.info(f"Std.Dev.: {self.df[self.label].std():.{self.options['precision']}}")
-        self.logger.info(f"Kurtosis: {self.df[self.label].kurt():.{self.options['precision']}}")
-        self.logger.info(f"Skewness: {self.df[self.label].skew():.{self.options['precision']}}")
+        self.logger.info(f"Mean:     {self.df[self.label].mean():.{self.options['precision']}f}")
+        self.logger.info(f"Median:   {self.df[self.label].median():.{self.options['precision']}f}")
+        self.logger.info(f"Std.Dev.: {self.df[self.label].std():.{self.options['precision']}f}")
+        self.logger.info(f"Kurtosis: {self.df[self.label].kurt():.{self.options['precision']}f}")
+        self.logger.info(f"Skewness: {self.df[self.label].skew():.{self.options['precision']}f}")
 
         if self.options["backend"] == "yellowbrick":
             from yellowbrick.target import class_balance
 
-            y_train = self.get_data("df")[self.label]
+            y_train = self.get_data(self.data)[self.label]
             y_test = None
 
             plt.figure()
@@ -2772,16 +2927,19 @@ class DataFactory(ABC):
             plt.tight_layout()
             plt.show()
 
-            if self.is_split_tt:
+            if self.is_split_tt or self.is_split_tvt:
                 _, y_train = self.get_data("train")
-                _, y_test = self.get_data("test")
+                if self.is_split_tvt:
+                    _, y_test = self.get_data("valid")
+                if self.is_split_tt:
+                    _, y_test = self.get_data("test")
 
                 plt.figure()
                 class_balance(y_train, y_test, labels=self.classes)
                 plt.tight_layout()
                 plt.show()
         else:
-            self.plot_dist(c0=self.label)
+            self.plot_bar(c0=self.label)
             if self.is_continuous:
                 self.plot_box(c0=self.label)
 
@@ -2802,7 +2960,7 @@ class DataFactory(ABC):
         :param str kind: Plot type (‘line’, ‘bar’, ‘barh’, ‘hist’, ‘box’, ‘kde’, ‘density’, ‘area’, ‘pie’, ‘scatter’, ‘hexbin’)
         :param bool subplots: Make subplots
         """
-        X = self.get_data("df")
+        X = self.get_data(self.data)
         c0, c1 = self.get_column([c0, c1])
 
         # plt.figure()
@@ -2812,14 +2970,14 @@ class DataFactory(ABC):
             fig.show()
         plt.tight_layout()
 
-    def plot_bar(self, c0: Union[int, str], by: str = None):
+    def plot_bar(self, c0: Union[int, str], by: str = None, norm: bool = False):
         """
         Plot bar.
 
         :param Union[int, str] c0: Column name
         :param str by: Column name to group-by
         """
-        X = self.get_data("df")
+        X = self.get_data(self.data)
         c0 = self.get_column([c0])
 
         if self.options["backend"] == "plotly":
@@ -2832,12 +2990,10 @@ class DataFactory(ABC):
         else:
             plt.figure()
             if by:
-                group = X.groupby(by)[c0].value_counts().sort_index().unstack(0)
-                norm = X.groupby(by)[c0].value_counts().sort_index().unstack(0).sum(axis=1)
+                group = X.groupby(by)[c0].value_counts(dropna=False, normalize=norm).sort_index().unstack(0)
             else:
-                group = X[c0].value_counts().sort_index()
-                norm = X[c0].value_counts().sort_index().sum()
-            fig = group.divide(norm, axis=0).plot.barh(stacked=True)
+                group = X[c0].value_counts(dropna=False, normalize=norm).sort_index()
+            fig = group.plot.barh(stacked=True)
             fig.set_xlabel("Percentage")
             fig.set_ylabel(c0)
 
@@ -2854,7 +3010,7 @@ class DataFactory(ABC):
         :param str by: Column name to group-by
         :param str selection: Extra selection
         """
-        X = self.get_data("df")
+        X = self.get_data(self.data)
         if selection is not None:
             X = X[selection]
         if c0 is None:
@@ -2891,7 +3047,7 @@ class DataFactory(ABC):
         :param str selection: Extra selection
         :param str kind: Plot type ('point', 'bar', 'count', 'box', 'violin', 'boxen', 'strip', 'swarm')
         """
-        X = self.get_data("df")
+        X = self.get_data(self.data)
         if selection is not None:
             X = X[selection]
         if c0 is None:
@@ -2911,7 +3067,7 @@ class DataFactory(ABC):
         :param Union[int, str] c1: Column name
         :param str by: Column name to group-by
         """
-        X = self.get_data("df")
+        X = self.get_data(self.data)
         c0, c1 = self.get_column([c0, c1])
 
         if self.options["backend"] == "plotly":
@@ -2932,7 +3088,7 @@ class DataFactory(ABC):
         :param Union[int, str] by: Column name to group-by
         :param str kind: Plot type ('hist', 'kde', 'ecdf')
         """
-        X = self.get_data("df")
+        X = self.get_data(self.data)
         c0 = self.get_column([c0])
 
         if X.dtypes[c0] in ["category", "object"]:
@@ -2968,7 +3124,7 @@ class DataFactory(ABC):
         """
         Plot heatmap.
         """
-        X = self.get_data("df")
+        X = self.get_data(self.data)
 
         plt.figure(figsize=(size, size))
         fig = sns.heatmap(X, vmin=vmin, vmax=vmax, cmap="coolwarm", linewidths=0.5, annot=True)
@@ -2986,7 +3142,7 @@ class DataFactory(ABC):
         :param str by: Column name to group-by
         :param str kind: Plot type ('scatter', 'kde', 'hist', 'hex', 'reg', 'resid')
         """
-        X = self.get_data("df")
+        X = self.get_data(self.data)
         c0, c1 = self.get_column([c0, c1])
 
         plt.figure()
@@ -3004,7 +3160,7 @@ class DataFactory(ABC):
         :param str by: Column name to group-by
         :param str kind: Plot type ('scatter', 'kde', 'hist', 'reg')
         """
-        X = self.get_data("df")
+        X = self.get_data(self.data)
         if columns is not None:
             X = X[columns]
         else:
@@ -3021,13 +3177,13 @@ class DataFactory(ABC):
             fig.show()
         plt.tight_layout()
 
-    def plot_parallel(self, data: str = "train", kind: str = "coord"):
+    def plot_parallel(self, kind: str = "coord"):
         """
         Plot parallel.
 
         :param str kind: kind ('coord', 'cat')
         """
-        X, y = self.get_data(data)
+        X, y = self.get_data(self.data_Xy)
 
         columns = self.columns
         if kind == "coord":
@@ -3061,11 +3217,11 @@ class DataFactory(ABC):
             fig.show()
         plt.tight_layout()
 
-    def plot_pca(self, data: str = "train", n_components=2, proj_features=True, heatmap=True):
+    def plot_pca(self, n_components=2, proj_features=True, heatmap=True):
         """
         Plot pca.
         """
-        X, y = self.get_data(data)
+        X, y = self.get_data(self.data_Xy)
 
         from yellowbrick.features import pca_decomposition
 
@@ -3085,13 +3241,13 @@ class DataFactory(ABC):
             fig.show()
         plt.tight_layout()
 
-    def plot_manifold(self, data: str = "train", n_components: int = 2, manifold: str = "mds"):
+    def plot_manifold(self, n_components: int = 2, manifold: str = "mds"):
         """
         Plot manifold.
 
         :param str manifold: kind ('lle', 'ltsa', 'hessian', 'modified', 'isomap', 'mds', 'spectral', 'tsne')
         """
-        X, y = self.get_data(data)
+        X, y = self.get_data(self.data_Xy)
 
         from yellowbrick.features import manifold_embedding
 
@@ -3110,11 +3266,11 @@ class DataFactory(ABC):
             fig.show()
         plt.tight_layout()
 
-    def plot_qq(self, c0, data: str = "train"):
+    def plot_qq(self, c0):
         """
         Plot Q-Q.
         """
-        X, _ = self.get_data(data)
+        X, _ = self.get_data(self.data_Xy)
         c0 = self.get_column(c0)
 
         from statsmodels.graphics.gofplots import qqplot
@@ -3126,11 +3282,11 @@ class DataFactory(ABC):
             fig.show()
         plt.tight_layout()
 
-    def plot_radviz(self, data: str = "train"):
+    def plot_radviz(self):
         """
         Plot radviz.
         """
-        X, y = self.get_data(data)
+        X, y = self.get_data(self.data_Xy)
         if isinstance(y, pd.Series):
             y = y.to_numpy()
 
@@ -3146,11 +3302,11 @@ class DataFactory(ABC):
             fig.show()
         plt.tight_layout()
 
-    def plot_ranking(self, data: str = "train"):
+    def plot_ranking(self):
         """
         Plot ranking.
         """
-        X, _ = self.get_data(data)
+        X, _ = self.get_data(self.data_Xy)
         _, ax = plt.subplots(ncols=2, figsize=(8, 4))
         from yellowbrick.features import rank1d, rank2d
 
@@ -3159,7 +3315,9 @@ class DataFactory(ABC):
         plt.tight_layout()
         plt.show()
 
-    def plot_scatter(self, c0: Union[int, str], c1: Union[int, str], by: str = None, alpha: float = 0.5):
+    def plot_scatter(
+        self, c0: Union[int, str], c1: Union[int, str], by: str = None, alpha: float = 0.5, y_predicted=None
+    ):
         """
         Plot scatter.
 
@@ -3167,12 +3325,13 @@ class DataFactory(ABC):
         :param Union[int, str] c1: Column name
         :param str by: Column name to group-by
         """
-        X = self.get_data("df")
+        X = self.get_data(self.data)
+        y = None
+        if y_predicted is not None:
+            X, _ = self.get_data(self.data_Xy)
+            y = y_predicted
         c0, c1 = self.get_column([c0, c1])
 
-        # if self.options["backend"] == "holoviews":
-        #     fig = hv.Scatter(X, c0, c1)
-        # elif self.options["backend"] == "matplotlib":
         if self.options["backend"] == "matplotlib":
             plt.figure()
             by = X[by] if by is not None else None
@@ -3182,6 +3341,18 @@ class DataFactory(ABC):
         elif self.options["backend"] == "seaborn":
             plt.figure()
             fig = sns.scatterplot(data=X, x=c0, y=c1, hue=by, alpha=alpha)
+        elif self.options["backend"] == "yellowbrick" and y is not None:
+            features_2d = [c0, c1]
+            X = X[features_2d]
+            X = convert_data(X, "array")
+            y = convert_data(y, "array")
+
+            from yellowbrick.contrib import ScatterVisualizer
+
+            plt.figure()
+            fig = ScatterVisualizer(features=features_2d, classes=self.classes, alpha=alpha)
+            fig.fit(X, y)
+            fig.transform(X)
         else:
             plt.figure()
             fig = X.plot.scatter(x=c0, y=c1)
@@ -3190,11 +3361,11 @@ class DataFactory(ABC):
             fig.show()
         plt.tight_layout()
 
-    def plot_sunburst(self, data: str = "train", by=None, path=None):
+    def plot_sunburst(self, by=None, path=None):
         """
         Plot sunburst.
         """
-        X, _ = self.get_data(data)
+        X, _ = self.get_data(self.data_Xy)
         if by == "label":
             by = self.label
         if path is None:
@@ -3215,7 +3386,7 @@ class DataFactory(ABC):
         :param Union[int, str] c2: Column name
         :param str by: Column name to group-by
         """
-        X = self.get_data("df")
+        X = self.get_data(self.data)
 
         c0, c1, c2 = self.get_column([c0, c1, c2])
 
@@ -3225,11 +3396,11 @@ class DataFactory(ABC):
             fig.show()
         plt.tight_layout()
 
-    def plot_treemap(self, data: str = "train", by=None, path=None):
+    def plot_treemap(self, by=None, path=None):
         """
         Plot treemap.
         """
-        X, _ = self.get_data(data)
+        X, _ = self.get_data(self.data_Xy)
         if by == "label":
             by = self.label
         if path is None:

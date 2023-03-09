@@ -3,12 +3,13 @@ from src.datafactory import DataFactory
 from IPython.display import display
 
 from typing import Union
+import inspect
 
 import pandas as pd
 import numpy as np
 
 BASE_FOLDER_ENR = "../data/AMA_Progetto_Fabbisogni/EmessoNonRiscosso"
-SQLITE_DB = "TARI_19_Feb_23.db"
+SQLITE_DB = "TARI_20230306.db"
 
 
 class ENR_DOM_CONTRATTI_ATTIVI(DataFactory):
@@ -576,58 +577,56 @@ class ENR_UTENZE(DataFactory):
         super().__init__(
             **kwargs,
         )
-        self.add_extra_columns()
+        if self.columns is not None and len(self.columns) != 0:
+            if "MOTIVO_PAREGGIO" in self.columns:
+                self.query_apply(
+                    "MOTIVO_PAREGGIO != '05 - Storno' & MOTIVO_PAREGGIO != '08 - Compensazione'", inplace=True
+                )
+            if "TIPO_DOC_PAREGGIO" in self.columns:
+                self.query_apply("TIPO_DOC_PAREGGIO != 'ST - Storno Fatture'", inplace=True)
 
-        self.query_apply("MOTIVO_PAREGGIO != '05 - Storno' & MOTIVO_PAREGGIO != '08 - Compensazione'", inplace=True)
-        self.query_apply("TIPO_DOC_PAREGGIO != 'ST - Storno Fatture'", inplace=True)
+            self.add_extra_columns()
 
     def add_extra_columns(self):
         """
         Add extra columns.
         """
-        if self.columns is not None and len(self.columns) != 0:
-            self.logger.info("")
-            self.logger.info("Add extra columns")
+        self.logger.info("")
+        self.logger.info("Add extra columns")
 
-            if "FLAG_RECAPITO" in self.columns:
-                self.df["FLAG_NON_RECAPITATO"] = self.df["FLAG_RECAPITO"] == 0
-            if "FLAG_NOPEC" in self.columns:
-                self.df["FLAG_NON_RECAPITATO"] = self.df["FLAG_NOPEC"] == 1
-            if "FLAG_DECEDUTO" in self.columns and "FLAG_CESSATA" in self.columns:
-                self.df["FLAG_DATI_ERRATI"] = (self.df["FLAG_DECEDUTO"] == 1) | (self.df["FLAG_CESSATA"] == 1)
+        # NON RECAPITATO = NO RECAPITO | NO PEC
+        if "FLAG_RECAPITO" in self.columns:
+            self.df["FLAG_NON_RECAPITATO"] = self.df["FLAG_RECAPITO"] == 0
+        if "FLAG_NOPEC" in self.columns:
+            self.df["FLAG_NON_RECAPITATO"] = self.df["FLAG_NOPEC"] == 1
+        # DATI ERRATI = DECEDUTO | CESSATA
+        if "FLAG_DECEDUTO" in self.columns and "FLAG_CESSATA" in self.columns:
+            self.df["FLAG_DATI_ERRATI"] = (self.df["FLAG_DECEDUTO"] == 1) | (self.df["FLAG_CESSATA"] == 1)
+        # NOTIFICATO = BOLLETTINO_WEB | BOLLETTINO_CC
+        if "FLAG_BOLLETTINO_WEB" in self.columns and "FLAG_BOLLETTINO_CC" in self.columns:
+            self.df["FLAG_NOTIFICATO"] = (self.df["FLAG_BOLLETTINO_WEB"] == 1) | (self.df["FLAG_BOLLETTINO_CC"] == 1)
+        self.update()
+        # GIUSTIFICATO = NON RECAPITATO | DATI ERRATI | RATEIZZATO | ESENTE
+        if (
+            "FLAG_DATI_ERRATI" in self.columns
+            and "FLAG_ESENTE" in self.columns
+            and "FLAG_RATE" in self.columns
+            # and "FLAG_NON_RECAPITATO" in self.columns
+        ):
+            self.df["FLAG_GIUSTIFICATO"] = (
+                (self.df["FLAG_DATI_ERRATI"] == 1)
+                | (self.df["FLAG_ESENTE"] == 1)
+                | (self.df["FLAG_RATE"] == 1)
+                # | (self.df["FLAG_NON_RECAPITATO"] == 1)
+            )
 
-            if (
-                "FLAG_NON_RECAPITATO" in self.columns
-                and "FLAG_DATI_ERRATI" in self.columns
-                and "FLAG_RATE" in self.columns
-                and "FLAG_ESENTE" in self.columns
-            ):
-                self.df["FLAG_GIUSTIFICATO"] = (
-                    (self.df["FLAG_NON_RECAPITATO"] == 1)
-                    | (self.df["FLAG_DATI_ERRATI"] == 1)
-                    | (self.df["FLAG_RATE"] == 1)
-                    | (self.df["FLAG_ESENTE"] == 1)
-                )
+        if "IMPORTO_CONTRATTO" in self.columns and "IMPORTO_PAREGGIO" in self.columns:
+            self.df["FLAG_PAGATO"] = 0
+            self.df.loc[self.df["IMPORTO_CONTRATTO"] == self.df["IMPORTO_PAREGGIO"], "FLAG_PAGATO"] = 1
+            self.df.loc[self.df["IMPORTO_CONTRATTO"] == 0, "FLAG_PAGATO"] = 0
 
-                if "FLAG_BOLLETTINO_WEB" in self.columns and "FLAG_BOLLETTINO_CC" in self.columns:
-                    self.df["FLAG_NOTIFICATO"] = (
-                        (self.df["FLAG_NON_RECAPITATO"] == 1)
-                        | (self.df["FLAG_DATI_ERRATI"] == 1)
-                        | (self.df["FLAG_RATE"] == 1)
-                        | (self.df["FLAG_ESENTE"] == 1)
-                    ) & ((self.df["FLAG_BOLLETTINO_WEB"] == 1) | (self.df["FLAG_BOLLETTINO_CC"] == 1))
-
-            if "IMPORTO_CONTRATTO" in self.columns and "IMPORTO_PAREGGIO" in self.columns:
-                self.df["PERCENTUALE_NON_PAGATO"] = (
-                    self.df["IMPORTO_CONTRATTO"] - self.df["IMPORTO_PAREGGIO"]
-                ) / self.df["IMPORTO_CONTRATTO"]
-                self.df["PERCENTUALE_NON_PAGATO"].fillna(0, inplace=True)
-                self.df["FLAG_PAGATO"] = 0
-                self.df.loc[self.df["IMPORTO_CONTRATTO"] == self.df["IMPORTO_PAREGGIO"], "FLAG_PAGATO"] = 1
-                self.df.loc[self.df["IMPORTO_CONTRATTO"] == 0, "FLAG_PAGATO"] = 0
-
-            self.update()
-            self.check_data()
+        self.update()
+        self.check_data()
 
     def print_importi(
         self,
@@ -773,8 +772,10 @@ class ENR_UTENZE(DataFactory):
 
     def merge_GE_VIE(self):
         """
-        Merge ENR_GE_VIE_DB.
+        Merge ENR_GE_VIE.
         """
+        self.logger.info("")
+        self.logger.info(f"{inspect.stack()[0][3]}")
         try:
             self.backup()
             self.drop_columns(["COD_VIA", "DSC_VIA", "LIM_CIV_DA", "LIM_CIV_A", "CAP", "COD_ZON_URB", "NUM_CIR"])
@@ -832,10 +833,80 @@ class ENR_UTENZE(DataFactory):
             self.restore()
             raise ValueError(f"{e}")
 
+    def merge_GET(self):
+        """
+        Merge ENR_GET_ATTIVITA and ENR_GET_PRATICHE.
+        """
+        self.logger.info("")
+        self.logger.info(f"{inspect.stack()[0][3]}")
+        try:
+            self.backup()
+            self.drop_columns(
+                [
+                    "FLAG_GET_ATTIVITA",
+                    "FLAG_GET_PRATICHE",
+                    "SOGGETTO_INTESTATARIO",
+                    "STATO",
+                    "CODICE_FISCALE_RICHIEDENTE",
+                    "STATO_LAVORAZIONE",
+                ]
+            )
+            self.logger.info("")
+            self.logger.info("Load")
+            df = ENR_GET_ATTIVITA(
+                pre_process=True,
+                process=True,
+                post_process=True,
+                silent=True,
+            )
+            self.logger.info("")
+            self.logger.info("Merge")
+            self.df = self.merge(
+                df.df[["SOGGETTO_INTESTATARIO", "STATO", "FLAG_GET_ATTIVITA"]],
+                lcolumns=["CNT_COD_FSC"],
+                rcolumns=["SOGGETTO_INTESTATARIO"],
+                how="left",
+                datafactory=False,
+                silent=self.silent,
+            )
+            del df
+            self.df["FLAG_GET_ATTIVITA"].fillna(0, inplace=True)
+            self.logger.info("")
+            self.logger.info("Load")
+            df = ENR_GET_PRATICHE(
+                pre_process=True,
+                process=True,
+                post_process=True,
+                silent=True,
+            )
+            self.logger.info("")
+            self.logger.info("Merge")
+            self.df = self.merge(
+                df.df[["CODICE_FISCALE_RICHIEDENTE", "STATO_LAVORAZIONE", "FLAG_GET_PRATICHE"]],
+                lcolumns=["CNT_COD_FSC"],
+                rcolumns=["CODICE_FISCALE_RICHIEDENTE"],
+                how="left",
+                datafactory=False,
+                silent=self.silent,
+            )
+            del df
+            self.df["FLAG_GET_PRATICHE"].fillna(0, inplace=True)
+            self.drop_columns(["SOGGETTO_INTESTATARIO", "CODICE_FISCALE_RICHIEDENTE"])
+            self.update()
+            self.print()
+            self.check_data()
+            self.check_keys()
+        except Exception as e:
+            self.display(self.df)
+            self.restore()
+            raise ValueError(f"{e}")
+
     def merge_DECESSI(self):
         """
-        Merge ENR_DECESSI_DB.
+        Merge ENR_DECESSI.
         """
+        self.logger.info("")
+        self.logger.info(f"{inspect.stack()[0][3]}")
         try:
             self.backup()
             self.drop_columns(["COD_FISCALE", "FLAG_DECEDUTO"])
@@ -871,8 +942,10 @@ class ENR_UTENZE(DataFactory):
 
     def merge_CESSAZIONI(self):
         """
-        Merge ENR_CESSAZIONI_DB.
+        Merge ENR_CESSAZIONI.
         """
+        self.logger.info("")
+        self.logger.info(f"{inspect.stack()[0][3]}")
         try:
             self.backup()
             self.drop_columns(["COD_FISCALE", "FLAG_CESSATA", "RI_CLEAN_STA_PAR_IVA"])
@@ -908,8 +981,10 @@ class ENR_UTENZE(DataFactory):
 
     def merge_ESENZIONI(self):
         """
-        Merge ENR_ESENZIONI_SAP_DB and ENR_ESENZIONI_RICHIESTE_DB.
+        Merge ENR_ESENZIONI_SAP and ENR_ESENZIONI_RICHIESTE.
         """
+        self.logger.info("")
+        self.logger.info(f"{inspect.stack()[0][3]}")
         try:
             self.backup()
             self.logger.info("")
@@ -965,8 +1040,10 @@ class ENR_UTENZE(DataFactory):
 
     def merge_RATEIZZAZIONI(self):
         """
-        Merge ENR_RATEIZZAZIONI_SAP_DB and ENR_RATEIZZAZIONI_RICHIESTE_DB.
+        Merge ENR_RATEIZZAZIONI_SAP and ENR_RATEIZZAZIONI_RICHIESTE.
         """
+        self.logger.info("")
+        self.logger.info(f"{inspect.stack()[0][3]}")
         try:
             self.backup()
             self.drop_columns(
@@ -1024,11 +1101,13 @@ class ENR_UTENZE(DataFactory):
 
     def merge_BOLLETTINI(self):
         """
-        Merge ENR_BOLLETTINI_WEB_DB.
+        Merge ENR_BOLLETTINI_WEB and ENR_BOLLETTINI_CC.
         """
+        self.logger.info("")
+        self.logger.info(f"{inspect.stack()[0][3]}")
         try:
             self.backup()
-            self.drop_columns(["FATTURA", "FLAG_BOLLETTINO_WEB"])
+            self.drop_columns(["FATTURA", "Codice Utente", "FLAG_BOLLETTINO_WEB", "FLAG_BOLLETTINO_CC"])
             self.logger.info("")
             self.logger.info("Load")
             df = ENR_BOLLETTINI_WEB(
@@ -1050,22 +1129,6 @@ class ENR_UTENZE(DataFactory):
             del df
             self.df["FLAG_BOLLETTINO_WEB"].fillna(0, inplace=True)
             self.drop_columns(["FATTURA"])
-            self.update()
-            self.print()
-            self.check_data()
-            self.check_keys()
-        except Exception as e:
-            self.display(self.df)
-            self.restore()
-            raise ValueError(f"{e}")
-
-    def merge_COPIE_CONFORMI(self):
-        """
-        Merge ENR_BOLLETTINI_CC_DB.
-        """
-        try:
-            self.backup()
-            self.drop_columns(["Codice Utente", "FLAG_BOLLETTINO_CC"])
             self.logger.info("")
             self.logger.info("Load")
             df = ENR_BOLLETTINI_CC(
@@ -1098,8 +1161,10 @@ class ENR_UTENZE(DataFactory):
 
     def merge_PAGAMENTI(self):
         """
-        Merge ENR_PAGAMENTI_DB.
+        Merge ENR_PAGAMENTI.
         """
+        self.logger.info("")
+        self.logger.info(f"{inspect.stack()[0][3]}")
         try:
             self.backup()
             self.drop_columns(["BP", "CONTRATTO", "IMPORTO_PAGAMENTO"])
@@ -1135,8 +1200,10 @@ class ENR_UTENZE(DataFactory):
 
     def merge_PAGAMENTI_F24(self):
         """
-        Merge ENR_PAGAMENTI_F24_DB.
+        Merge ENR_PAGAMENTI_F24.
         """
+        self.logger.info("")
+        self.logger.info(f"{inspect.stack()[0][3]}")
         try:
             self.backup()
             self.drop_columns(["CodFis", "FLAG_F24", "IMPORTO_F24"])
@@ -1204,21 +1271,25 @@ class ENR_DOM(ENR_UTENZE):
         # self.df.sort_values(self.keys, ignore_index=True, inplace=True)
         pass
 
-    def merge_ALL(self):
+    def merge_ALL(self, step1: bool = False, step2: bool = False):
         """
         Merge all DBs.
         """
+        self.logger.info("")
+        self.logger.info(f"{inspect.stack()[0][3]}")
         try:
-            self.merge_CONTRATTI()
-            self.merge_GE_VIE()
-            self.merge_DECESSI()
-            self.merge_CESSAZIONI()
-            self.merge_RECAPITI()
-            self.merge_ESENZIONI()
-            self.merge_RATEIZZAZIONI()
-            self.merge_BOLLETTINI()
-            self.merge_COPIE_CONFORMI()
-            self.merge_PAGAMENTI_F24()
+            if step1:
+                self.merge_CONTRATTI()
+                self.merge_GE_VIE()
+                self.merge_DECESSI()
+                self.merge_CESSAZIONI()
+                self.merge_GET()
+            if step2:
+                self.merge_RECAPITI()
+                self.merge_ESENZIONI()
+                self.merge_RATEIZZAZIONI()
+                self.merge_BOLLETTINI()
+            # self.merge_PAGAMENTI_F24()
         except Exception as e:
             self.display(self.df)
             self.restore()
@@ -1226,8 +1297,10 @@ class ENR_DOM(ENR_UTENZE):
 
     def merge_CONTRATTI(self):
         """
-        Merge ENR_DOM_AVVISI_CONTRATTI_ATTIVI_DB and ENR_DOM_CONTRATTI_ATTIVI_DB.
+        Merge ENR_DOM_AVVISI_CONTRATTI_ATTIVI and ENR_DOM_CONTRATTI_ATTIVI.
         """
+        self.logger.info("")
+        self.logger.info(f"{inspect.stack()[0][3]}")
         try:
             self.backup()
             self.logger.info("")
@@ -1267,8 +1340,10 @@ class ENR_DOM(ENR_UTENZE):
 
     def merge_RECAPITI(self):
         """
-        Merge ENR_DOM_RECAPITI_DB.
+        Merge ENR_DOM_RECAPITI.
         """
+        self.logger.info("")
+        self.logger.info(f"{inspect.stack()[0][3]}")
         try:
             self.backup()
             self.drop_columns(["FLAG_RECAPITO", "BP", "CONTRATTO"])
@@ -1339,18 +1414,19 @@ class ENR_NDOM(ENR_UTENZE):
         """
         Merge all DBs.
         """
+        self.logger.info("")
+        self.logger.info(f"{inspect.stack()[0][3]}")
         try:
             self.merge_CONTRATTI()
             self.merge_GE_VIE()
             self.merge_DECESSI()
             self.merge_CESSAZIONI()
-            self.merge_PEC()
             self.merge_GET()
+            self.merge_PEC()
             self.merge_ESENZIONI()
             self.merge_RATEIZZAZIONI()
             self.merge_BOLLETTINI()
-            self.merge_COPIE_CONFORMI()
-            self.merge_PAGAMENTI_F24()
+            # self.merge_PAGAMENTI_F24()
         except Exception as e:
             self.display(self.df)
             self.restore()
@@ -1358,8 +1434,10 @@ class ENR_NDOM(ENR_UTENZE):
 
     def merge_CONTRATTI(self):
         """
-        Merge ENR_NDOM_AVVISI_CONTRATTI_ATTIVI_DB and ENR_NDOM_CONTRATTI_ATTIVI_DB.
+        Merge ENR_NDOM_AVVISI_CONTRATTI_ATTIVI and ENR_NDOM_CONTRATTI_ATTIVI.
         """
+        self.logger.info("")
+        self.logger.info(f"{inspect.stack()[0][3]}")
         try:
             self.backup()
             self.logger.info("")
@@ -1399,8 +1477,10 @@ class ENR_NDOM(ENR_UTENZE):
 
     def merge_PEC(self):
         """
-        Merge ENR_NDOM_PEC_SAP_DB and ENR_NDOM_PEC_INVII_DB.
+        Merge ENR_NDOM_PEC_SAP and ENR_NDOM_PEC_INVII.
         """
+        self.logger.info("")
+        self.logger.info(f"{inspect.stack()[0][3]}")
         try:
             self.backup()
             self.drop_columns(["FLAG_PEC_SAP", "FLAG_PEC_INV", "FLAG_NOPEC", "FLAG_PEC", "NUMERO_FATTURA", "SEMESTRE"])
@@ -1453,72 +1533,6 @@ class ENR_NDOM(ENR_UTENZE):
             self.df["FLAG_NOPEC"] = (self.df["FLAG_PEC_SAP"] == 0) | (self.df["FLAG_PEC_INV"] == 0)
             self.df["FLAG_PEC"] = (self.df["FLAG_PEC_SAP"] == 1) | (self.df["FLAG_PEC_INV"] == 1)
             self.drop_columns(["NUMERO_FATTURA"])
-            self.update()
-            self.print()
-            self.check_data()
-            self.check_keys()
-        except Exception as e:
-            self.display(self.df)
-            self.restore()
-            raise ValueError(f"{e}")
-
-    def merge_GET(self):
-        """
-        Merge ENR_GET_ATTIVITA and ENR_GET_PRATICHE.
-        """
-        try:
-            self.backup()
-            self.drop_columns(
-                [
-                    "FLAG_GET_ATTIVITA",
-                    "FLAG_GET_PRATICHE",
-                    "SOGGETTO_INTESTATARIO",
-                    "STATO",
-                    "CODICE_FISCALE_RICHIEDENTE",
-                    "STATO_LAVORAZIONE",
-                ]
-            )
-            self.logger.info("")
-            self.logger.info("Load")
-            df = ENR_GET_ATTIVITA(
-                pre_process=True,
-                process=True,
-                post_process=True,
-                silent=True,
-            )
-            self.logger.info("")
-            self.logger.info("Merge")
-            self.df = self.merge(
-                df.df[["SOGGETTO_INTESTATARIO", "STATO", "FLAG_GET_ATTIVITA"]],
-                lcolumns=["CNT_COD_FSC"],
-                rcolumns=["SOGGETTO_INTESTATARIO"],
-                how="left",
-                datafactory=False,
-                silent=self.silent,
-            )
-            del df
-            self.df["FLAG_GET_ATTIVITA"].fillna(0, inplace=True)
-            self.logger.info("")
-            self.logger.info("Load")
-            df = ENR_GET_PRATICHE(
-                pre_process=True,
-                process=True,
-                post_process=True,
-                silent=True,
-            )
-            self.logger.info("")
-            self.logger.info("Merge")
-            self.df = self.merge(
-                df.df[["CODICE_FISCALE_RICHIEDENTE", "STATO_LAVORAZIONE", "FLAG_GET_PRATICHE"]],
-                lcolumns=["CNT_COD_FSC"],
-                rcolumns=["CODICE_FISCALE_RICHIEDENTE"],
-                how="left",
-                datafactory=False,
-                silent=self.silent,
-            )
-            del df
-            self.df["FLAG_GET_PRATICHE"].fillna(0, inplace=True)
-            self.drop_columns(["SOGGETTO_INTESTATARIO", "CODICE_FISCALE_RICHIEDENTE"])
             self.update()
             self.print()
             self.check_data()
@@ -1633,8 +1647,7 @@ class ENR_CESSAZIONI(DataFactory):
         }
         self.parse_dates = {"DAT_NSC": "%Y%m%d"}
         super().__init__(
-            df=f"{BASE_FOLDER_ENR}/RisultatoAnalisi/Verifica_anagrafica_3 (NON DOMESTICHE).xlsx",
-            sheet_name="Aggregazione per cnt_cod",
+            df=f"{BASE_FOLDER_ENR}/{SQLITE_DB} | Aggregazioni_stesso_BP",
             keys=["COD_FISCALE"],
             dtype=dtype,
             # parse_dates=self.parse_dates,
@@ -1822,7 +1835,7 @@ class ENR_GET_ATTIVITA(DataFactory):
         }
         self.parse_dates = {"DATA_ULTIMA_PRATICA": "%Y-%m-%d"}
         super().__init__(
-            df=f"{BASE_FOLDER_ENR}/Dati-GET/AFFIDAMENTI.xlsx",
+            df=f"{BASE_FOLDER_ENR}/{SQLITE_DB} | Affidamenti",
             keys=["SOGGETTO_INTESTATARIO"],
             dtype=dtype,
             # parse_dates=self.parse_dates,
@@ -1892,7 +1905,7 @@ class ENR_GET_PRATICHE(DataFactory):
         }
         self.parse_dates = {"DATA_PRESENTAZIONE": "%Y-%m-%d"}
         super().__init__(
-            df=f"{BASE_FOLDER_ENR}/Dati-GET/PRATICHE.xlsx",
+            df=f"{BASE_FOLDER_ENR}/{SQLITE_DB} | Pratiche",
             keys=["CODICE_FISCALE_RICHIEDENTE"],
             dtype=dtype,
             # parse_dates=self.parse_dates,
@@ -2265,7 +2278,7 @@ class ENR_BOLLETTINI_CC(DataFactory):
             "DATA_CHIUSURA": "%Y%m%d",
         }
         super().__init__(
-            df=f"{BASE_FOLDER_ENR}/Flussi/Copie_Conformi_pulito.csv",
+            df=f"{BASE_FOLDER_ENR}/{SQLITE_DB} | Copie_Conformi_pulito",
             keys=["Codice Utente"],
             dtype=dtype,
             # parse_dates=self.parse_dates,
@@ -2677,8 +2690,10 @@ class ENR_GE_VIE(DataFactory):
 
     def merge_GE_TERRIT(self):
         """
-        Merge ENR_GE_TERRIT_DB.
+        Merge ENR_GE_TERRIT.
         """
+        self.logger.info("")
+        self.logger.info(f"{inspect.stack()[0][3]}")
         try:
             self.drop_columns(
                 columns=[

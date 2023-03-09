@@ -8,13 +8,13 @@ import functools
 from icecream import ic
 import logging
 
+import os
 import re
 
 import numpy as np
 import pandas as pd
 
-# from codicefiscale import codicefiscale
-from dataprep.clean import clean_headers, clean_date, clean_it_codicefiscale, clean_it_iva
+from dataprep.clean import clean_headers, clean_date
 
 REGEX_D = "([0-2][1-9]|3[01])"
 REGEX_M = "(0[1-9]|1[0-2])"
@@ -106,6 +106,19 @@ def latest_file(dirname: str, pattern: str = "*") -> str:
     """
     files = all_files(dirname, pattern)
     return max(files, key=lambda x: x.stat().st_ctime)
+
+
+def all_method_options(file: str, method: str, lines: int) -> list:
+    """
+    All 'method' options in class method.
+
+    :param str file: File name
+    :param str method: Method name
+    :param int lines: Lines to grep
+    """
+    os.system(
+        f"grep 'def {method}' {file} -A {lines} | grep ValueError -B {lines} | grep from | grep -v system | sed s:'            from':'-': | sort"
+    )
 
 
 def convert_data(data, to: str):
@@ -231,107 +244,5 @@ def clean_dates(df: pd.DataFrame, column: Union[str, list]) -> pd.DataFrame:
     for c in column:
         df = clean_date(df, column=c, output_format="YYYY-MM-DD", inplace=True)
         df.rename(columns={f"{c}_clean": f"{c}"}, inplace=True)
-
-    return df
-
-
-# def decode_codice_fiscale(x: str) -> list:
-#     """
-#     Decode codice fiscale.
-#
-#     .. seealso:: https://github.com/fabiocaccamo/python-codicefiscale
-#
-#     :param str x: Codice fiscale
-#     :return: [flag, sex, birthdate, birthplace]
-#     """
-#     try:
-#         cf = codicefiscale.decode(x)
-#         info = list()
-#         if cf is not None:
-#             info.append(1)
-#             info.append(cf.get("sex", "-"))
-#             info.append(cf.get("birthdate", "-"))
-#             if cf.get("birthplace", "-") is not None:
-#                 info.append(cf.get("birthplace", "-").get("name", "-"))
-#             else:
-#                 info.append("-")
-#         else:
-#             info = [0]
-#             info.extend([""] * 3)
-#     except Exception:
-#         info = [0]
-#         info.extend([""] * 3)
-#     return info
-
-
-# def process_codice_fiscale(df: pd.DataFrame, column: str) -> pd.DataFrame:
-#     """
-#     Process codice fiscale.
-#
-#     :param pd.DataFrame df: DataFrame
-#     :param str column: Column name
-#     :return: DataFrame
-#     """
-#     logging.info("")
-#     logging.info("Process Codice Fiscale")
-#
-#     df_ = df[column].apply(decode_codice_fiscale).to_frame()
-#     df_split = pd.DataFrame(df_[column].to_list(), columns=[column + "_ISVALID", "SEX", "BIRTHDATE", "BIRTHPLACE"])
-#     df_split[column + "_ISVALID"] = df_split[column + "_ISVALID"].astype("category")
-#     df_split["SEX"] = df_split["SEX"].astype("category")
-#     df_split["BIRTHDATE"] = df_split["BIRTHDATE"].astype("datetime64[ns]")
-#     df_split["BIRTHPLACE"] = df_split["BIRTHPLACE"].astype("category")
-#     del df_
-#
-#     df = pd.concat([df, df_split], axis=1)
-#     del df_split
-#
-#     return df
-
-
-def clean_codice_fiscale(df: pd.DataFrame, column: str) -> pd.DataFrame:
-    """
-    Clean codice fiscale.
-
-    .. seealso:: https://docs.dataprep.ai/api_reference/dataprep.clean.html#module-dataprep.clean.clean_it_codicefiscale
-    .. seealso:: https://arthurdejong.org/python-stdnum/doc/1.17/stdnum.it.codicefiscale
-
-    :param pd.DataFrame df: DataFrame
-    :param str column: Column name
-    :return: DataFrame
-    """
-    logging.info("")
-    logging.info("Clean Codice Fiscale")
-
-    df = clean_it_codicefiscale(df, column=column, output_format="standard")
-    df.rename(columns={f"{column}_clean": f"{column}_CLEANED"}, inplace=True)
-    df[f"{column}_CLEANED"] = df[f"{column}_CLEANED"].astype("object")
-    # df = clean_it_codicefiscale(df, column=column, output_format="gender")
-    # df.rename(columns={f"{column}_clean": f"{column}_SEX"}, inplace=True)
-    # df[f"{column}_SEX"] = df[f"{column}_SEX"].astype("category")
-    # df = clean_it_codicefiscale(df, column=column, output_format="birthdate")
-    # df.rename(columns={f"{column}_clean": f"{column}_BIRTHDATE"}, inplace=True)
-    # df[f"{column}_BIRTHDATE"] = df[f"{column}_BIRTHDATE"].astype("datetime64[ns]")
-
-    return df
-
-
-def clean_partita_iva(df: pd.DataFrame, column: str) -> pd.DataFrame:
-    """
-    Clean partita iva.
-
-    .. seealso:: https://docs.dataprep.ai/api_reference/dataprep.clean.html#module-dataprep.clean.clean_it_iva
-    .. seealso:: https://arthurdejong.org/python-stdnum/doc/1.17/stdnum.it.iva
-
-    :param pd.DataFrame df: DataFrame
-    :param str column: Column name
-    :return: DataFrame
-    """
-    logging.info("")
-    logging.info("Clean Partita IVA")
-
-    df = clean_it_iva(df, column=column, output_format="standard")
-    df.rename(columns={f"{column}_clean": f"{column}_CLEANED"}, inplace=True)
-    df[f"{column}_CLEANED"] = df[f"{column}_CLEANED"].astype("object")
 
     return df
