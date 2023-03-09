@@ -651,8 +651,9 @@ class ENR_UTENZE(DataFactory):
             "UTZ_CONTRATTO": [pd.Series.nunique],
             "CNT_COD_FSC": [pd.Series.nunique],
             "IMPORTO_CONTRATTO": ["sum"],
-            "IMPORTO_PAREGGIO": ["sum"],
         }
+        if "IMPORTO_PAREGGIO" in self.columns:
+            func["IMPORTO_PAREGGIO"] = ["sum"]
         if "IMPORTO_PAGAMENTO" in self.columns:
             func["IMPORTO_PAGAMENTO"] = ["sum"]
 
@@ -1273,7 +1274,7 @@ class ENR_DOM(ENR_UTENZE):
 
     def merge_ALL(self, step1: bool = False, step2: bool = False):
         """
-        Merge all DBs.
+        Merge all.
         """
         self.logger.info("")
         self.logger.info(f"{inspect.stack()[0][3]}")
@@ -1410,22 +1411,24 @@ class ENR_NDOM(ENR_UTENZE):
         # self.df.sort_values(self.keys, ignore_index=True, inplace=True)
         pass
 
-    def merge_ALL(self):
+    def merge_ALL(self, step1: bool = True, step2: bool = True):
         """
-        Merge all DBs.
+        Merge all.
         """
         self.logger.info("")
         self.logger.info(f"{inspect.stack()[0][3]}")
         try:
-            self.merge_CONTRATTI()
-            self.merge_GE_VIE()
-            self.merge_DECESSI()
-            self.merge_CESSAZIONI()
-            self.merge_GET()
-            self.merge_PEC()
-            self.merge_ESENZIONI()
-            self.merge_RATEIZZAZIONI()
-            self.merge_BOLLETTINI()
+            if step1:
+                self.merge_CONTRATTI()
+                self.merge_GE_VIE()
+                self.merge_DECESSI()
+                self.merge_CESSAZIONI()
+                self.merge_GET()
+            if step2:
+                self.merge_PEC()
+                self.merge_ESENZIONI()
+                self.merge_RATEIZZAZIONI()
+                self.merge_BOLLETTINI()
             # self.merge_PAGAMENTI_F24()
         except Exception as e:
             self.display(self.df)
@@ -1903,12 +1906,12 @@ class ENR_GET_PRATICHE(DataFactory):
             "STATO_LAVORAZIONE": "string",
             "STRUTTURA_COMPENTENTE": "string",
         }
-        self.parse_dates = {"DATA_PRESENTAZIONE": "%Y-%m-%d"}
+        self.parse_dates = {"DATA_PRESENTAZIONE": "%d/%m/%Y"}
         super().__init__(
             df=f"{BASE_FOLDER_ENR}/{SQLITE_DB} | Pratiche",
             keys=["CODICE_FISCALE_RICHIEDENTE"],
             dtype=dtype,
-            # parse_dates=self.parse_dates,
+            parse_dates=self.parse_dates,
             **kwargs,
         )
 
@@ -1916,6 +1919,8 @@ class ENR_GET_PRATICHE(DataFactory):
         """
         Pre-Process DataFrame.
         """
+        # self.set_types(["DATA_PRESENTAZIONE"], "datetime", "%d-%m-%y")
+
         self.df["FLAG_GET_PRATICHE"] = 1
         self.set_types(["FLAG_GET_PRATICHE"], "int")
         pass

@@ -558,7 +558,7 @@ class DataFactory(ABC):
         self.logger.info(f"Save to {path / filename}")
 
         if ext == "csv":
-            self.df.to_csv(path / filename)
+            self.df.to_csv(path / filename, index=False)
         elif ext == "xlsx":
             self.df.to_excel(path / filename)
         elif ext == "pkl":
@@ -583,6 +583,7 @@ class DataFactory(ABC):
         """
         if self.df_bkp is not None:
             self.df = self.df_bkp
+            self.update()
 
     # @abstractmethod
     def pre_process(self):
@@ -1000,7 +1001,9 @@ class DataFactory(ABC):
         ic()
 
         self.columns = self.df.columns
-        self.features = self.columns.drop(self.label) if self.label is not None else self.columns
+        self.features = (
+            self.columns.drop(self.label) if self.label is not None and self.label in self.columns else self.columns
+        )
         self.columns = list(self.columns)
         self.features = list(self.features)
 
@@ -1102,6 +1105,35 @@ class DataFactory(ABC):
                 columns=columns,
                 inplace=True,
             )
+            self.update()
+
+            shp2 = self.df.shape
+            self.logger.info(f"Shape: {shp1} -> {shp2} ({shp2[1]/shp1[1]:.2%})")
+
+    def set_columns(self, columns: Union[str, list], copy: bool = False):
+        """
+        Set columns.
+
+        :param Union[str, list] columns: Column name
+        """
+        ic()
+
+        if not isinstance(columns, list):
+            columns = [columns]
+
+        columns = [c for c in columns if c in self.df.columns]
+        if columns:
+            self.logger.info("")
+            self.logger.info(f"Set columns: {len(columns)} - {columns}")
+
+            if self.df_bkp is None:
+                self.backup(copy=copy)
+            else:
+                self.restore()
+
+            shp1 = self.df.shape
+            self.df = self.df[columns]
+            self.update()
 
             shp2 = self.df.shape
             self.logger.info(f"Shape: {shp1} -> {shp2} ({shp2[1]/shp1[1]:.2%})")
@@ -1806,6 +1838,7 @@ class DataFactory(ABC):
                 self.df.query(query, inplace=inplace)
             else:
                 self.df = self.df_bkp.query(query)
+            self.update()
 
             shp2 = self.df.shape
             self.logger.info(f"Shape: {shp1} -> {shp2} ({shp2[0]/shp1[0]:.2%})")
