@@ -7,6 +7,8 @@ channels:
 dependencies:
   - python=3.9
 
+  - gitpython
+
   - icecream
 
   - pre-commit
@@ -25,14 +27,27 @@ dependencies:
 
   - numpy=1.22.4
   - pandas
-  - openpyxl
   - odfpy
+  - openpyxl
+  - pytables
   - pandarallel
 
   - thefuzz
 
   - scipy=1.7.1
   - scikit-learn
+  - boruta_py
+  - category_encoders
+  - imbalanced-learn
+  - scikit-posthocs
+  - catboost
+  - lightgbm
+  - xgboost
+  - optuna
+#  - lazypredict
+#  - auto-sklearn
+#  - tpot
+#  - pyod
 
   - matplotlib
   - seaborn
@@ -48,6 +63,7 @@ dependencies:
 #  - lux-api
 #  - missingno
 #  - pandas-profiling
+  - pygwalker
 #  - ppscore
   - sidetable
 #  - sweetviz

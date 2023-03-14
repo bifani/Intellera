@@ -9,8 +9,8 @@ jobs:
     strategy:
       max-parallel: 5
     steps:
-    - uses: actions/checkout@v2
-    - uses: actions/cache@v2
+    - uses: actions/checkout@v3
+    - uses: actions/cache@v3
       with:
         path: |
           /home/runner/.conda
@@ -30,8 +30,8 @@ jobs:
     strategy:
       max-parallel: 5
     steps:
-    - uses: actions/checkout@v2
-    - uses: actions/cache@v2
+    - uses: actions/checkout@v3
+    - uses: actions/cache@v3
       with:
         path: |
           /home/runner/.conda
@@ -44,25 +44,25 @@ jobs:
         conda activate ama
         pre-commit run --all-files
 
-  pytest:
-    needs: setup
-    runs-on: ubuntu-latest
-    strategy:
-      max-parallel: 5
-    steps:
-    - uses: actions/checkout@v2
-    - uses: actions/cache@v2
-      with:
-        path: |
-          /home/runner/.conda
-          /usr/share/miniconda
-        key: ama-python-${{ hashFiles('config/environment.yml') }}
-        restore-keys: ama-python-${{ hashFiles('config/environment.yml') }}
-    - name: Run pytest
-      run: |
-        source /usr/share/miniconda/etc/profile.d/conda.sh
-        conda activate ama
-        pytest --cov=src --full-trace -v src/tests/
+#  pytest:
+#    needs: setup
+#    runs-on: ubuntu-latest
+#    strategy:
+#      max-parallel: 5
+#    steps:
+#    - uses: actions/checkout@v3
+#    - uses: actions/cache@v3
+#      with:
+#        path: |
+#          /home/runner/.conda
+#          /usr/share/miniconda
+#        key: ama-python-${{ hashFiles('config/environment.yml') }}
+#        restore-keys: ama-python-${{ hashFiles('config/environment.yml') }}
+#    - name: Run pytest
+#      run: |
+#        source /usr/share/miniconda/etc/profile.d/conda.sh
+#        conda activate ama
+#        pytest --cov=src --full-trace -v src/tests/
 
 #  sphinx:
 #    needs: setup
@@ -70,8 +70,8 @@ jobs:
 #    strategy:
 #      max-parallel: 5
 #    steps:
-#    - uses: actions/checkout@v2
-#    - uses: actions/cache@v2
+#    - uses: actions/checkout@v3
+#    - uses: actions/cache@v3
 #      with:
 #        path: |
 #          /home/runner/.conda

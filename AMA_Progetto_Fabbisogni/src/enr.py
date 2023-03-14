@@ -90,7 +90,7 @@ class ENR_DOM_CONTRATTI_ATTIVI(DataFactory):
                 "RCP_NUM_CIV",
                 "RCP_SGL_NAZ",
                 "RCP_SGL_PRV",
-                "RCP_VIA_DES",
+                # "RCP_VIA_DES",
                 "UTZ_BLOCCO_CA",
                 "UTZ_BLOCCO_CA_DATA",
                 "UTZ_BLOCCO_CNT",
@@ -276,7 +276,7 @@ class ENR_DOM_RECAPITI(DataFactory):
             "RCP_NUM_CIV",
             "RCP_SGL_NAZ",
             "RCP_SGL_PRV",
-            "RCP_VIA_DES",
+            # "RCP_VIA_DES",
         ]
         self.clean_data(toup=cols)
 
@@ -594,6 +594,8 @@ class ENR_UTENZE(DataFactory):
         self.logger.info("")
         self.logger.info("Add extra columns")
 
+        self.set_types([c for c in self.columns if c.startswith("FLAG_")], "int")
+
         # NON RECAPITATO = NO RECAPITO | NO PEC
         if "FLAG_RECAPITO" in self.columns:
             self.df["FLAG_NON_RECAPITATO"] = self.df["FLAG_RECAPITO"] == 0
@@ -619,6 +621,8 @@ class ENR_UTENZE(DataFactory):
                 | (self.df["FLAG_RATE"] == 1)
                 # | (self.df["FLAG_NON_RECAPITATO"] == 1)
             )
+
+        self.set_types([c for c in self.columns if c.startswith("FLAG_")], "int")
 
         if "IMPORTO_CONTRATTO" in self.columns and "IMPORTO_PAREGGIO" in self.columns:
             self.df["FLAG_PAGATO"] = 0
@@ -648,10 +652,12 @@ class ENR_UTENZE(DataFactory):
 
         func = {
             "CNT_COD": ["count", pd.Series.nunique],
-            "UTZ_CONTRATTO": [pd.Series.nunique],
             "CNT_COD_FSC": [pd.Series.nunique],
-            "IMPORTO_CONTRATTO": ["sum"],
+            "UTZ_CONTRATTO": [pd.Series.nunique],
+            "NUM_FATT": [pd.Series.nunique],
         }
+        if "IMPORTO_CONTRATTO" in self.columns:
+            func["IMPORTO_CONTRATTO"] = ["sum"]
         if "IMPORTO_PAREGGIO" in self.columns:
             func["IMPORTO_PAREGGIO"] = ["sum"]
         if "IMPORTO_PAGAMENTO" in self.columns:
@@ -872,6 +878,7 @@ class ENR_UTENZE(DataFactory):
             )
             del df
             self.df["FLAG_GET_ATTIVITA"].fillna(0, inplace=True)
+            self.set_types(["FLAG_GET_ATTIVITA"], "int")
             self.logger.info("")
             self.logger.info("Load")
             df = ENR_GET_PRATICHE(
@@ -892,6 +899,7 @@ class ENR_UTENZE(DataFactory):
             )
             del df
             self.df["FLAG_GET_PRATICHE"].fillna(0, inplace=True)
+            self.set_types(["FLAG_GET_PRATICHE"], "int")
             self.drop_columns(["SOGGETTO_INTESTATARIO", "CODICE_FISCALE_RICHIEDENTE"])
             self.update()
             self.print()
@@ -910,7 +918,7 @@ class ENR_UTENZE(DataFactory):
         self.logger.info(f"{inspect.stack()[0][3]}")
         try:
             self.backup()
-            self.drop_columns(["COD_FISCALE", "FLAG_DECEDUTO"])
+            self.drop_columns(["COD_FISCALE", "FLAG_DECEDUTO", "DAT_DEC"])
             self.logger.info("")
             self.logger.info("Load")
             df = ENR_DECESSI(
@@ -922,7 +930,7 @@ class ENR_UTENZE(DataFactory):
             self.logger.info("")
             self.logger.info("Merge")
             self.df = self.merge(
-                df.df[["COD_FISCALE", "FLAG_DECEDUTO"]],
+                df.df[["COD_FISCALE", "FLAG_DECEDUTO", "DAT_DEC"]],
                 lcolumns=["CNT_COD_FSC"],
                 rcolumns=["COD_FISCALE"],
                 how="left",
@@ -931,6 +939,7 @@ class ENR_UTENZE(DataFactory):
             )
             del df
             self.df["FLAG_DECEDUTO"].fillna(0, inplace=True)
+            self.set_types(["FLAG_DECEDUTO"], "int")
             self.drop_columns(["COD_FISCALE"])
             self.update()
             self.print()
@@ -949,7 +958,9 @@ class ENR_UTENZE(DataFactory):
         self.logger.info(f"{inspect.stack()[0][3]}")
         try:
             self.backup()
-            self.drop_columns(["COD_FISCALE", "FLAG_CESSATA", "RI_CLEAN_STA_PAR_IVA"])
+            self.drop_columns(
+                ["COD_FISCALE", "FLAG_CESSATA", "AT_FLG_STA_PI", "RI_CLEAN_STA_PAR_IVA", "RI_CLEAN_DAT_CESS"]
+            )
             self.logger.info("")
             self.logger.info("Load")
             df = ENR_CESSAZIONI(
@@ -961,7 +972,7 @@ class ENR_UTENZE(DataFactory):
             self.logger.info("")
             self.logger.info("Merge")
             self.df = self.merge(
-                df.df[["COD_FISCALE", "FLAG_CESSATA", "RI_CLEAN_STA_PAR_IVA"]],
+                df.df[["COD_FISCALE", "FLAG_CESSATA", "AT_FLG_STA_PI", "RI_CLEAN_STA_PAR_IVA", "RI_CLEAN_DAT_CESS"]],
                 lcolumns=["CNT_COD_FSC"],
                 rcolumns=["COD_FISCALE"],
                 how="left",
@@ -970,6 +981,7 @@ class ENR_UTENZE(DataFactory):
             )
             del df
             self.df["FLAG_CESSATA"].fillna(0, inplace=True)
+            self.set_types(["FLAG_CESSATA"], "int")
             self.drop_columns(["COD_FISCALE"])
             self.update()
             self.print()
@@ -1008,6 +1020,7 @@ class ENR_UTENZE(DataFactory):
             )
             del df
             self.df["FLAG_ESENTE_SAP"].fillna(0, inplace=True)
+            self.set_types(["FLAG_ESENTE_SAP"], "int")
             self.logger.info("")
             self.logger.info("Load")
             df = ENR_ESENZIONI_RICHIESTE(
@@ -1028,6 +1041,7 @@ class ENR_UTENZE(DataFactory):
             )
             del df
             self.df["FLAG_ESENTE_RIC"].fillna(0, inplace=True)
+            self.set_types(["FLAG_ESENTE_RIC"], "int")
             self.df["FLAG_ESENTE"] = (self.df["FLAG_ESENTE_SAP"] == 1) | (self.df["FLAG_ESENTE_RIC"] == 1)
             self.drop_columns(["BP"])
             self.update()
@@ -1069,6 +1083,7 @@ class ENR_UTENZE(DataFactory):
             )
             del df
             self.df["FLAG_RATE_SAP"].fillna(0, inplace=True)
+            self.set_types(["FLAG_RATE_SAP"], "int")
             self.logger.info("")
             self.logger.info("Load")
             df = ENR_RATEIZZAZIONI_RICHIESTE(
@@ -1089,6 +1104,7 @@ class ENR_UTENZE(DataFactory):
             )
             del df
             self.df["FLAG_RATE_RIC"].fillna(0, inplace=True)
+            self.set_types(["FLAG_RATE_RIC"], "int")
             self.df["FLAG_RATE"] = (self.df["FLAG_RATE_SAP"] == 1) | (self.df["FLAG_RATE_RIC"] == 1)
             self.drop_columns(["Codice_Utente"])
             self.update()
@@ -1129,6 +1145,7 @@ class ENR_UTENZE(DataFactory):
             )
             del df
             self.df["FLAG_BOLLETTINO_WEB"].fillna(0, inplace=True)
+            self.set_types(["FLAG_BOLLETTINO_WEB"], "int")
             self.drop_columns(["FATTURA"])
             self.logger.info("")
             self.logger.info("Load")
@@ -1150,6 +1167,7 @@ class ENR_UTENZE(DataFactory):
             )
             del df
             self.df["FLAG_BOLLETTINO_CC"].fillna(0, inplace=True)
+            self.set_types(["FLAG_BOLLETTINO_CC"], "int")
             self.drop_columns(["Codice Utente"])
             self.update()
             self.print()
@@ -1228,6 +1246,7 @@ class ENR_UTENZE(DataFactory):
             )
             del df
             self.df["FLAG_F24"].fillna(0, inplace=True)
+            self.set_types(["FLAG_F24"], "int")
             self.df["IMPORTO_F24"].fillna(0, inplace=True)
             self.drop_columns(["CodFis"])
             self.update()
@@ -1368,6 +1387,7 @@ class ENR_DOM(ENR_UTENZE):
             )
             del df
             self.df["FLAG_RECAPITO"].fillna(-3, inplace=True)
+            self.set_types(["FLAG_RECAPITO"], "int")
             self.drop_columns(["BP", "CONTRATTO"])
             self.update()
             self.print()
@@ -1387,6 +1407,8 @@ class ENR_NDOM(ENR_UTENZE):
     def __init__(self, **kwargs):
         super().__init__(
             df=f"{BASE_FOLDER_ENR}/NDOM.pkl.zip",
+            # df=f"{BASE_FOLDER_ENR}/NDOM_FINAL.csv",
+            # low_memory=False,
             keys=["CNT_COD", "UTZ_CONTRATTO", "CNT_COD_FSC", "NUM_FATT"],
             **kwargs,
         )
@@ -1506,6 +1528,7 @@ class ENR_NDOM(ENR_UTENZE):
             )
             del df
             self.df["FLAG_PEC_SAP"].fillna(1, inplace=True)
+            self.set_types(["FLAG_PEC_SAP"], "int")
             self.logger.info("")
             self.logger.info("Load")
             df = ENR_NDOM_PEC_INVII(
@@ -1532,10 +1555,247 @@ class ENR_NDOM(ENR_UTENZE):
             )
             del df
             self.df["FLAG_PEC_INV"].fillna(0, inplace=True)
+            self.set_types(["FLAG_PEC_INV"], "int")
             self.df.loc[self.df["FLAG_PEC_INV"] == 2, "FLAG_PEC_INV"] = 1
             self.df["FLAG_NOPEC"] = (self.df["FLAG_PEC_SAP"] == 0) | (self.df["FLAG_PEC_INV"] == 0)
             self.df["FLAG_PEC"] = (self.df["FLAG_PEC_SAP"] == 1) | (self.df["FLAG_PEC_INV"] == 1)
             self.drop_columns(["NUMERO_FATTURA"])
+            self.update()
+            self.print()
+            self.check_data()
+            self.check_keys()
+        except Exception as e:
+            self.display(self.df)
+            self.restore()
+            raise ValueError(f"{e}")
+
+
+class ENR_CONTRATTI(DataFactory):
+    """
+    Contratti.
+
+    - Flag Paganti
+    - Flag Deceduti
+    - Flag Probabile Volturante
+    - Flag Modesta Valente
+    - Flag Attivo
+    - Flag Cessato
+    - Flag In fallimento
+    - Flag Sospesa
+    - Flag Inattiva
+    """
+
+    def __init__(self, **kwargs):
+        dtype = {
+            "TIPO_UTZ": "string",
+            "UTZ_CONTRATTO": "string",
+            "CATEGORIA": "string",
+            "NUCLEO": "int",
+            "SUPERFICIE": "float",
+        }
+        # self.parse_dates = {
+        # }
+        super().__init__(
+            df=f"{BASE_FOLDER_ENR}/DBSimulazioneTariffa/contratti*.csv",
+            sep=";",
+            keys=["UTZ_CONTRATTO"],
+            dtype=dtype,
+            # parse_dates=self.parse_dates,
+            **kwargs,
+        )
+
+    def pre_process(self):
+        """
+        Pre-Process DataFrame.
+        """
+        self.set_types("UTZ_CONTRATTO", "string l0")
+
+        from pandas import Int64Dtype
+
+        flags = [c for c in self.df.columns if c.startswith("FLAG_") and c != "FLAG_AT_STATO" and c != "FLAG_RI_STATO"]
+        for f in flags:
+            if self.df[f].dtypes != Int64Dtype():
+                self.set_types(f, "int")
+
+        self.set_types(
+            {
+                "CATEGORIA": "string",
+                "CNT_COD": "string",
+                "CNT_COD_FSC": "string",
+                "CNT_COGNOME": "string",
+                "CNT_NOME": "string",
+                "CNT_PAR_IVA": "string",
+                "CNT_RAG_SOC": "string",
+                "CNT_TCN_COD": "string",
+                "IMPORTO_CONTRATTO": "float64",
+                "IMPORTO_PAREGGIO": "float64",
+                "MOTIVO_PAREGGIO": "string",
+                "NUCLEO": "int64",
+                "NUM_FATT": "string",
+                "RCP_VIA_DES": "string",
+                "AT_FLG_STA_PI": "string",
+                "RI_CLEAN_STA_PAR_IVA": "string",
+                "STATO_PAR_IVA": "string",
+                "SUPERFICIE": "float64",
+                "TIPO_UTZ": "string",
+                "UTZ_CONTRATTO": "string",
+                "UTZ_VIA_DES": "string",
+            }
+        )
+
+        if "DAT_DEC" in self.df.columns:
+            self.df.rename(columns={"DAT_DEC": "DATA_DECESSO"}, inplace=True)
+        if "AT_FLG_STA_PI" in self.df.columns:
+            self.df.rename(columns={"AT_FLG_STA_PI": "FLAG_AT_STATO"}, inplace=True)
+        if "RI_CLEAN_STA_PAR_IVA" in self.df.columns:
+            self.df.rename(columns={"RI_CLEAN_STA_PAR_IVA": "FLAG_RI_STATO"}, inplace=True)
+        if "RI_CLEAN_DAT_CESS" in self.df.columns:
+            self.df.rename(columns={"RI_CLEAN_DAT_CESS": "DATA_CESSAZIONE_RI"}, inplace=True)
+
+        if "RCP_VIA_DES" in self.df.columns:
+            self.df["FLAG_MODESTA_VALENTI"] = 0
+            self.set_types(["FLAG_MODESTA_VALENTI"], "int")
+            self.df.loc[self.df["RCP_VIA_DES"].str.contains("modesta valenti", case=False), "FLAG_MODESTA_VALENTI"] = 1
+
+        if "FLAG_AT_STATO" in self.df.columns:
+            self.column_transform("FLAG_AT_STATO", "dummies", inplace=True)
+        if "FLAG_RI_STATO" in self.df.columns:
+            self.column_transform("FLAG_RI_STATO", "dummies", inplace=True)
+
+        if "CNT_TCN_COD" in self.df.columns:
+            columns = [
+                c
+                for c in self.df.columns
+                if c not in ["TIPO_UTZ", "UTZ_CONTRATTO", "CATEGORIA", "NUCLEO", "SUPERFICIE", "CNT_TCN_COD"]
+            ]
+            self.df.loc[self.df["CNT_TCN_COD"].isnull(), columns] = np.nan
+
+        flags = [c for c in self.df.columns if c.startswith("FLAG_") and c != "FLAG_AT_STATO" and c != "FLAG_RI_STATO"]
+        for f in flags:
+            if self.df[f].dtypes != Int64Dtype():
+                self.set_types(f, "Int64")
+
+        pass
+
+    def process(self):
+        """
+        Process DataFrame.
+        """
+        self.clean_data(datetime=True, empty=True, spaces=True, headers=True, fillna=None)
+        pass
+
+    def post_process(self):
+        """
+        Post-Process DataFrame.
+        """
+        self.df.sort_values(self.keys, ignore_index=True, inplace=True)
+        pass
+
+    def merge_DOM_NDOM(self):
+        """
+        Merge ENR_DOM and ENR_NDOM.
+        """
+        self.logger.info("")
+        self.logger.info(f"{inspect.stack()[0][3]}")
+        try:
+            columns = [
+                "CNT_COD",
+                "CNT_TCN_COD",
+                "CNT_COGNOME",
+                "CNT_NOME",
+                "CNT_RAG_SOC",
+                "CNT_PAR_IVA",
+                "CNT_COD_FSC",
+                "RCP_VIA_DES",
+                "UTZ_VIA_DES",
+                "NUM_FATT",
+                "IMPORTO_CONTRATTO",
+                "MOTIVO_PAREGGIO",
+                "IMPORTO_PAREGGIO",
+                "FLAG_DECEDUTO",
+                "DAT_DEC",
+                "FLAG_CESSATA",
+                "AT_FLG_STA_PI",
+                "RI_CLEAN_STA_PAR_IVA",
+                "RI_CLEAN_DAT_CESS",
+                "FLAG_PAGATO",
+            ]
+            self.backup()
+            self.drop_columns(columns)
+            self.logger.info("")
+            self.logger.info("Load")
+            dom = ENR_DOM(
+                pre_process=True,
+                process=True,
+                post_process=True,
+                silent=True,
+            )
+            dom.df["TIPO_UTZ"] = "D"
+            dom = dom.df[["UTZ_CONTRATTO", "TIPO_UTZ"] + columns]
+            ndom = ENR_NDOM(
+                pre_process=True,
+                process=True,
+                post_process=True,
+                silent=True,
+            )
+            ndom.df["TIPO_UTZ"] = "N"
+            ndom.df["RCP_VIA_DES"] = ""
+            ndom = ndom.df[["UTZ_CONTRATTO", "TIPO_UTZ"] + columns]
+            self.logger.info("")
+            self.logger.info("Concatenate")
+            df = pd.concat([dom, ndom], axis=0, ignore_index=True)
+            self.logger.info("")
+            self.logger.info("Merge")
+            self.df = self.merge(
+                df,
+                columns=["UTZ_CONTRATTO", "TIPO_UTZ"],
+                how="left",
+                datafactory=False,
+                silent=self.silent,
+            )
+            # self.dom = dom
+            # self.ndom = ndom
+            # self.domndom = df
+            del dom, ndom, df
+            self.update()
+            self.print()
+            self.check_data()
+            self.check_keys()
+        except Exception as e:
+            self.display(self.df)
+            self.restore()
+            raise ValueError(f"{e}")
+
+    def merge_VOLTURE(self):
+        """
+        Merge ENR_VOLTURE.
+        """
+        self.logger.info("")
+        self.logger.info(f"{inspect.stack()[0][3]}")
+        try:
+            self.backup()
+            self.drop_columns(["UTZ_COD", "FLAG_VOLTURA"])
+            self.logger.info("")
+            self.logger.info("Load")
+            df = ENR_VOLTURE(
+                pre_process=True,
+                process=True,
+                post_process=True,
+                silent=True,
+            )
+            self.logger.info("")
+            self.logger.info("Merge")
+            self.df = self.merge(
+                df.df[["UTZ_COD", "FLAG_VOLTURA"]],
+                lcolumns=["UTZ_CONTRATTO"],
+                rcolumns=["UTZ_COD"],
+                how="left",
+                datafactory=False,
+                silent=self.silent,
+            )
+            del df
+            self.df["FLAG_VOLTURA"].fillna(0, inplace=True)
+            self.drop_columns(["UTZ_COD"])
             self.update()
             self.print()
             self.check_data()
@@ -1589,16 +1849,79 @@ class ENR_DECESSI(DataFactory):
         """
         Pre-Process DataFrame.
         """
+        self.df["FLAG_DECEDUTO"] = 0
+        self.set_types(["FLAG_DECEDUTO"], "int")
+        self.df.loc[self.df["VERIFICA_SOGG"] == "DECEDUTI", "FLAG_DECEDUTO"] = 1
         pass
 
     def process(self):
         """
         Process DataFrame.
         """
-        self.df["FLAG_DECEDUTO"] = 0
-        self.set_types(["FLAG_DECEDUTO"], "int")
-        self.df.loc[self.df["VERIFICA_SOGG"] == "DECEDUTI", "FLAG_DECEDUTO"] = 1
+        self.clean_data(datetime=True, empty=True, spaces=True, fillna="numeric")
+        self.clean_data(dropdup=self.keys)
+        pass
 
+    def post_process(self):
+        """
+        Post-Process DataFrame.
+        """
+        self.df.sort_values(self.keys, ignore_index=True, inplace=True)
+        pass
+
+
+class ENR_VOLTURE(DataFactory):
+    """
+    Volture.
+    """
+
+    def __init__(self, **kwargs):
+        dtype = {
+            "UTZ_COD": "string",
+            "DEN_VIA_UTZ": "string",
+            "NUM_CIV_UTZ": "string",
+            "ESP_CIV_UTZ": "string",
+            "COD_FAM": "string",
+            "DEN_SOG_DEC": "string",
+            "COD_FIS_DEC": "string",
+            "STA_CIV_DEC": "string",
+            "DEN_SOG_FAM": "string",
+            "COD_FIS_FAM": "string",
+            "DES_REL_PAR": "string",
+            "STA_CIV_FAM": "string",
+            "FLG_PAG": "string",
+        }
+        self.parse_dates = {
+            "DAT_NSC_DEC": "%Y%m%d",
+            "DAT_DEC": "%Y%m%d",
+            "DAT_NSC_FAM": "%Y%m%d",
+            "DAT_INI_FAM": "%Y%m%d",
+        }
+        super().__init__(
+            df=f"{BASE_FOLDER_ENR}/Volturanti/H501_Volture_Domestiche_Residenti_Deceduti_v2.xls",
+            sheet_name="Elenco Per AMA",
+            keys=["COD_FIS_DEC"],
+            dtype=dtype,
+            # parse_dates=self.parse_dates,
+            **kwargs,
+        )
+
+    def pre_process(self):
+        """
+        Pre-Process DataFrame.
+        """
+        self.set_types(["UTZ_COD"], "string l0")
+
+        self.set_types(["DAT_NSC_DEC", "DAT_DEC", "DAT_NSC_FAM", "DAT_INI_FAM"], "datetime", "%Y%m%d")
+
+        self.df["FLAG_VOLTURA"] = 1
+        self.set_types(["FLAG_VOLTURA"], "int")
+        pass
+
+    def process(self):
+        """
+        Process DataFrame.
+        """
         self.clean_data(datetime=True, empty=True, spaces=True, fillna="numeric")
         self.clean_data(dropdup=self.keys)
         pass
@@ -1648,7 +1971,7 @@ class ENR_CESSAZIONI(DataFactory):
             "ANNO_PAREGGIO": "string",
             "FLG_PRESENTE_BOL": "string",
         }
-        self.parse_dates = {"DAT_NSC": "%Y%m%d"}
+        self.parse_dates = {"DAT_NSC": "%Y%m%d", "RI_CLEAN_DAT_CESS": "%Y%m%d", "ANNO_RI_DAT_CESS": "%Y%m%d"}
         super().__init__(
             df=f"{BASE_FOLDER_ENR}/{SQLITE_DB} | Aggregazioni_stesso_BP",
             keys=["COD_FISCALE"],
@@ -1661,16 +1984,20 @@ class ENR_CESSAZIONI(DataFactory):
         """
         Pre-Process DataFrame.
         """
+        self.set_types(["DAT_NSC"], "datetime", "%Y%m%d")
+        self.set_types(["RI_CLEAN_DAT_CESS"], "datetime d0", "%Y%m%d")
+        self.set_types(["ANNO_RI_DAT_CESS"], "datetime d0", "%Y")
+
+        self.df["FLAG_CESSATA"] = 0
+        self.set_types(["FLAG_CESSATA"], "int")
+        self.df.loc[self.df["AT_FLG_STA_PI"] == "Cessata", "FLAG_CESSATA"] = 1
+        self.df.loc[self.df["RI_CLEAN_STA_PAR_IVA"] == "Cessata", "FLAG_CESSATA"] = 1
         pass
 
     def process(self):
         """
         Process DataFrame.
         """
-        self.df["FLAG_CESSATA"] = 0
-        self.set_types(["FLAG_CESSATA"], "int")
-        self.df.loc[self.df["RI_CLEAN_STA_PAR_IVA"] == "Cessata", "FLAG_CESSATA"] = 1
-
         self.clean_data(datetime=True, empty=True, spaces=True, fillna="numeric")
         self.clean_data(dropna=self.keys)
         self.clean_data(dropdup=self.keys)
@@ -1919,8 +2246,6 @@ class ENR_GET_PRATICHE(DataFactory):
         """
         Pre-Process DataFrame.
         """
-        # self.set_types(["DATA_PRESENTAZIONE"], "datetime", "%d-%m-%y")
-
         self.df["FLAG_GET_PRATICHE"] = 1
         self.set_types(["FLAG_GET_PRATICHE"], "int")
         pass

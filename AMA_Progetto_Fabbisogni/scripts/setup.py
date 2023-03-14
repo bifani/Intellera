@@ -22,11 +22,24 @@ def set_path():
     """
     Set repo path.
     """
+    import os
     import sys
     from pathlib import Path
 
-    git_repo_path = Path().cwd().parents[0]
-    git_repo_name = git_repo_path.name
+    from git import Repo
+
+    i = 0
+    git_repo_path = Path().cwd()
+    git_repo_name = ""
+    while True:
+        try:
+            repo = Repo(git_repo_path)
+            git_repo_name = repo.working_tree_dir.split("/")[-1]
+            break
+        except Exception:
+            git_repo_path = Path().cwd().parents[i]
+            i = i + 1
+            pass
 
     print()
     print(f"Repo name: {git_repo_name}")
@@ -35,6 +48,11 @@ def set_path():
 
     if git_repo_path.is_dir() and str(git_repo_path) not in sys.path:
         sys.path.append(str(git_repo_path))
+
+    os.environ["GIT_REPO_NAME"] = git_repo_name
+    os.environ["GIT_REPO_PATH"] = f"{git_repo_path}"
+    os.environ["GIT_REPO_DATA"] = f"{git_repo_path}/data"
+    os.environ["GIT_REPO_IPYNB"] = f"{git_repo_path}/notebooks"
 
 
 def set_modin(engine: str = "dask"):

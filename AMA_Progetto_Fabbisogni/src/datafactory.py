@@ -119,7 +119,6 @@ class DataFactory(ABC):
         self.logger = None
 
         self.set_options()
-        self.set_kwargs()
 
         ic()
 
@@ -140,15 +139,14 @@ class DataFactory(ABC):
             post_process = False
 
         if pickled and isinstance(self.df, str):
-            ext = self.df.split(".")[-2] if self.df.split(".")[-1] in ["zip"] else self.df.split(".")[-1]
-            self.df = self.df.replace("/*", f"/{self.name}") if "/*" in self.df else self.df
-            self.df = self.df.replace(f".{self.df.split('.')[-1]}", f"_DataFactory.{self.ext}.{self.compression}")
-            self.df = self.df.replace(f".{ext}", "") if len(ext) == 3 and ext != self.ext else self.df
-            pre_process = False
-            # process = False
-            # post_process = False
+            # ext = Path(self.df).suffixes[0].replace(".", "")
+            path = Path(self.df).parent
+            stem = Path(self.df).stem.replace("*", "").upper()
+            self.df = str(path / Path((stem if stem != "" else self.name) + "_DF." + self.ext + "." + self.compression))
 
         self.load()
+
+        self.set_kwargs()
 
         self.df.drop(columns=self.df.columns[self.df.columns.str.contains("Unnamed")])
         self.detect_columns()
@@ -294,7 +292,11 @@ class DataFactory(ABC):
         elif pop is not None:
             self.kwargs.pop(pop, None)
         else:
-            self.kwargs.update(**kwargs)
+            self.kwargs = dict()
+            self.set_kwargs(key="random_state", value=self.options["random_state"])
+
+            for key, value in kwargs.items():
+                self.set_kwargs(key=key, value=value)
 
     def print_options(self):
         """
@@ -312,10 +314,7 @@ class DataFactory(ABC):
         for key, value in self.kwargs.items():
             self.logger.info(f"{key:<{self.options['alignment']}} = {value}")
 
-    def set_label(
-        self,
-        label: str,
-    ):
+    def set_label(self, label: str, split: bool = False):
         """
         Set label.
 
@@ -334,6 +333,9 @@ class DataFactory(ABC):
             self.classes = sorted(list(np.unique(self.df[self.label])))
             self.is_binary = True if len(self.classes) == 2 else False
             self.detect_columns()
+        if split:
+            self.split_Xy()
+            self.split_tt()
 
     def load(self):  # NOQA C901
         """
@@ -355,39 +357,71 @@ class DataFactory(ABC):
             self.merge_Xy()
 
         elif isinstance(self.df, str) and "sklearn." in self.df:
-            self.set_kwargs(key="random_state", value=self.options["random_state"])
+            if "load." in self.df:
+                self.logger.info("")
+                self.logger.info("Load sklearn.datasets")
 
-            self.logger.info("")
-            self.logger.info("Generate sklearn.datasets")
-            self.label = "t"
-            self.df = self.df.replace("sklearn.", "")
-            if self.df == "blobs":
-                from sklearn.datasets import make_blobs
+                self.df = self.df.replace("sklearn.load.", "")
+                if self.df == "breast_cancer":
+                    from sklearn.datasets import load_breast_cancer
 
-                X, y = make_blobs(**self.kwargs)
-            elif self.df == "classification":
-                from sklearn.datasets import make_classification
+                    X, y = load_breast_cancer(return_X_y=True, as_frame=True)
+                elif self.df == "digits":
+                    from sklearn.datasets import load_digits
 
-                X, y = make_classification(**self.kwargs)
-            elif self.df == "classification_multilabel":
-                from sklearn.datasets import make_multilabel_classification
+                    X, y = load_digits(return_X_y=True, as_frame=True)
+                elif self.df == "iris":
+                    from sklearn.datasets import load_iris
 
-                X, y = make_multilabel_classification(**self.kwargs)
-            elif self.df == "regression":
-                from sklearn.datasets import make_regression
+                    X, y = load_iris(return_X_y=True, as_frame=True)
+                else:
+                    raise ValueError(f"Invalid sklearn.datasets.load: {self.df}")
 
-                X, y = make_regression(**self.kwargs)
+                self.X = X
+                self.y = y
+                self.label = y.name
+
+            elif "make." in self.df:
+                self.set_kwargs(key="random_state", value=self.options["random_state"])
+
+                self.logger.info("")
+                self.logger.info("Make sklearn.datasets")
+                self.label = "t"
+                self.df = self.df.replace("sklearn.make.", "")
+                if self.df == "blobs":
+                    from sklearn.datasets import make_blobs
+
+                    X, y = make_blobs(**self.kwargs)
+                elif self.df == "classification":
+                    from sklearn.datasets import make_classification
+
+                    X, y = make_classification(**self.kwargs)
+                elif self.df == "classification_multilabel":
+                    from sklearn.datasets import make_multilabel_classification
+
+                    X, y = make_multilabel_classification(**self.kwargs)
+                elif self.df == "regression":
+                    from sklearn.datasets import make_regression
+
+                    X, y = make_regression(**self.kwargs)
+                elif self.df == "friedman1":
+                    from sklearn.datasets import make_friedman1
+
+                    X, y = make_friedman1(**self.kwargs)
+                else:
+                    raise ValueError(f"Invalid sklearn.datasets.make: {self.df}")
+
+                self.X = pd.DataFrame(X)
+                self.X.columns = [f"f{x}" for x in self.X.columns]
+                if self.df == "classification_multilabel":
+                    self.y = pd.DataFrame(y)
+                    self.y.columns = [f"{self.label}{y}" for y in self.y.columns]
+                    self.label = self.y.columns.to_list()
+                else:
+                    self.y = pd.Series(y, name=self.label)
             else:
                 raise ValueError(f"Invalid sklearn.datasets: {self.df}")
 
-            self.X = pd.DataFrame(X)
-            self.X.columns = [f"f{x}" for x in self.X.columns]
-            if self.df == "classification_multilabel":
-                self.y = pd.DataFrame(y)
-                self.y.columns = [f"{self.label}{y}" for y in self.y.columns]
-                self.label = self.y.columns.to_list()
-            else:
-                self.y = pd.Series(y, name=self.label)
             self.merge_Xy()
 
         elif isinstance(self.df, str):
@@ -395,20 +429,22 @@ class DataFactory(ABC):
                 self.df, table = self.df.split(" | ")
 
             if self.df.split(".")[-1] in ["zip"]:
-                zip = self.df.split(".")[-1]
-                ext = self.df.split(".")[-2]
+                ext = Path(self.df).suffixes[0].replace(".", "")
+                zip = Path(self.df).suffixes[1].replace(".", "")
             else:
+                ext = Path(self.df).suffixes[0].replace(".", "")
                 zip = None
-                ext = self.df.split(".")[-1]
 
             if "*" in self.df:
-                path = Path(self.df).parents[0]
-                files = all_files(path, ext if not zip else zip)
-                files = [f for f in files if "DataFactory" not in str(f)]
+                path = Path(self.df).parent
+                name = Path(self.df).name
+                stem = Path(self.df).stem.replace("*", "").upper()
+                files = all_files(path, name)
+                files = [f for f in files if "_DF" not in str(f)]
                 if not len(files):
                     raise ValueError(f"Invalid ext: {self.df}")
                 self.logger.info("")
-                self.logger.info(f"Load {len(files)} {ext if not zip else zip} files from {path}")
+                self.logger.info(f"Load {len(files)} {ext if not zip else zip} files from {path/name}")
                 dfs = list()
                 for f in files:
                     self.df = str(f)
@@ -417,6 +453,7 @@ class DataFactory(ABC):
                     self.load()
                     dfs.append(self.df)
                 self.df = pd.concat(dfs, axis=0, ignore_index=True)
+                self.file = path / stem if stem != "" else None
 
             else:
                 if not os.path.isfile(self.df) and zip is not None:
@@ -429,7 +466,7 @@ class DataFactory(ABC):
                 self.logger.info(f"Size {round(os.path.getsize(self.df) / 1024**2, 2)} MB")
                 self.file = Path(self.df)
 
-                if ext == "csv":
+                if ext in ["csv", "txt"]:
                     self.df = pd.read_csv(
                         self.df,
                         **self.kwargs,
@@ -440,7 +477,7 @@ class DataFactory(ABC):
                         sep="\t",
                         **self.kwargs,
                     )
-                elif ext in ["xlsx", "ods"]:
+                elif ext in ["xlsx", "xls", "ods"]:
                     engine = "odf" if ext == "ods" else None
                     self.df = pd.read_excel(
                         self.df,
@@ -474,7 +511,7 @@ class DataFactory(ABC):
                 elif ext == "h5":
                     self.df = pd.read_hdf(
                         self.df,
-                        key="key",
+                        # key="key",
                         mode="r",
                         **self.kwargs,
                     )
@@ -522,6 +559,10 @@ class DataFactory(ABC):
         if self.df.empty or self.df.shape[0] == 0 or self.df.shape[1] == 0:
             raise ValueError(f"Empty DataFrame: {self.df.shape}")
 
+        if self.file is None:
+            path = Path().cwd().parent / "data"
+            self.file = path / self.name
+
     def save(self, filename: str = None, ext: str = "pkl", compression: str = None):
         """
         Save DataFrame.
@@ -536,17 +577,22 @@ class DataFactory(ABC):
         compression = self.compression if compression is None else compression
 
         if self.file is not None:
-            path = self.file.parents[0]
+            path = self.file.parent
             if filename is None:
                 filename = (
-                    f"{self.file.stem.split('.')[0]}_DataFactory.{ext}"
-                    if "DataFactory" not in self.file.stem
-                    else f"{self.file.stem.split('.')[0]}.{ext}"
+                    f"{self.file.stem.split('.')[0]}_DF"
+                    if "_DF" not in self.file.stem
+                    else f"{self.file.stem.split('.')[0]}"
                 )
         else:
-            path = Path().cwd().parents[0] / "data"
+            path = Path().cwd().parent / "data"
             if filename is None:
-                filename = f"{self.name}.{ext}"
+                filename = f"{self.name}"
+
+        filename = Path(filename)
+        path = filename.parent if filename.parent != Path(".") else path
+        path = path.resolve()
+        filename = filename.stem
 
         if ext not in filename:
             filename = f"{filename}.{ext}"
@@ -753,6 +799,7 @@ class DataFactory(ABC):
             self.logger.info(
                 f"Unique values: {self.df[c].nunique(dropna=False)} ({self.df[c].nunique(dropna=False) / self.df[c].shape[0]:.2%})"
             )
+
         if verbose or max(self.df[columns].nunique(dropna=False).to_list()) != self.df.shape[0]:
 
             def counts(columns):
@@ -765,7 +812,7 @@ class DataFactory(ABC):
             if len(columns) > 3:
                 self.logger.info("")
                 for c in columns:
-                    if self.df[c].dtype.kind != "f" and self.df[c].nunique(dropna=False) < 1000:
+                    if self.df[c].nunique(dropna=False) < 100:
                         self.logger.info(f"{c}")
                         self.logger.info(
                             f"Unique values: {self.df[c].nunique(dropna=False)} ({self.df[c].nunique(dropna=False) / self.df[c].shape[0]:.2%})"
@@ -939,7 +986,8 @@ class DataFactory(ABC):
             self.logger.info(f"Set Column Types: {columns}")
 
             for k, v in columns.items():
-                self.df[k] = self.df[k].astype(v)
+                if k in self.columns:
+                    self.df[k] = self.df[k].astype(v)
         else:
             if dtype is None:
                 return
@@ -987,7 +1035,7 @@ class DataFactory(ABC):
                 self.df[columns] = self.df[columns].fillna("0").astype("int64")
             elif dtype == "float":
                 self.df[columns] = self.df[columns].fillna("0").astype("float64")
-            elif dtype == "float":
+            elif dtype == "categorical":
                 self.df[columns] = self.df[columns].fillna("NAN").astype("category")
             else:
                 self.df[columns] = self.df[columns].astype(dtype)
@@ -1174,29 +1222,66 @@ class DataFactory(ABC):
         """
         self.df[self.columns]
 
-    def split_columns(self, method: int = 2) -> dict:
+    # def split_columns(self, method: int = 2) -> dict:
+    #     """
+    #     Split columns.
+    #
+    #     :param method: Split method
+    #     :return: Column dictionary
+    #     """
+    #     ic()
+    #
+    #     columns = {}
+    #     if method == 1:
+    #         columns["num"] = self.get_data("numeric")
+    #     elif method == 2:
+    #         columns["num"] = self.get_data("numeric")
+    #         columns["obj"] = self.get_data("object")
+    #     elif method == 3:
+    #         columns["con"] = self.get_data("float")
+    #         columns["ord"] = self.get_data("integer")
+    #         columns["cat"] = self.get_data("object")
+    #     else:
+    #         raise ValueError(f"Invalid method: {method}")
+    #
+    #     return columns
+
+    def split_columns(self, X, y=None, method="2", encode=False):
         """
         Split columns.
 
-        :param method:
+        :param method: Split method
         :return: Column dictionary
         """
-        ic()
 
-        columns = {}
-        if method == 1:
-            columns["num"] = self.get_data("numeric")
-        elif method == 2:
-            columns["num"] = self.get_data("numeric")
-            columns["obj"] = self.get_data("object")
-        elif method == 3:
-            columns["con"] = self.get_data("float")
-            columns["ord"] = self.get_data("integer")
-            columns["cat"] = self.get_data("object")
+        def get_data(type, X, y=None):
+            columns = self.get_columns(type)
+            if self.label in columns:
+                columns.remove(self.label)
+            X_sub = None
+            if len(self.get_columns(type)) != 0:
+                X_sub = X[columns]
+                if type in ["category", "object"] and encode:
+                    from sklearn.preprocessing import OrdinalEncoder
+
+                    X_sub = X_sub.apply(OrdinalEncoder().fit_transform)
+                if y is not None:
+                    X_sub = pd.concat([y, X_sub], axis=1)
+            return X_sub
+
+        Xs = {}
+        if method == "1":
+            Xs["num"] = get_data("numeric", X, y)
+        elif method == "2":
+            Xs["num"] = get_data("numeric", X, y)
+            Xs["obj"] = get_data("object", X, y)
+        elif method == "3":
+            Xs["con"] = get_data("float", X, y)
+            Xs["ord"] = get_data("integer", X, y)
+            Xs["cat"] = get_data("object", X, y)
         else:
             raise ValueError(f"Invalid method: {method}")
-
-        return columns
+        return Xs
 
     def update(self):
         """
@@ -1207,7 +1292,7 @@ class DataFactory(ABC):
         self.detect_types()
         self.detect_columns()
 
-    def get_data(self, type: str):  # NOQA C901
+    def get_data(self, type: str):
         """
         Get data.
 
@@ -1235,24 +1320,17 @@ class DataFactory(ABC):
             return self.df
         elif type == "Xy":
             return self.X, self.y
-        elif type == "train":
-            return self.X_train, self.y_train
-        elif type == "valid":
-            return self.X_valid, self.y_valid
-        elif type == "test":
-            return self.X_test, self.y_test
+        elif type in ["train", "valid", "test"]:
+            return getattr(self, f"X_{type}"), getattr(self, f"y_{type}")
         elif type == "Xy_tt":
             return self.X_train, self.X_test, self.y_train, self.y_test
         elif type == "Xy_tv":
             return self.X_train, self.X_valid, self.y_train, self.y_valid
         elif type == "Xy_tvt":
             return self.X_train, self.X_valid, self.X_test, self.y_train, self.y_valid, self.y_test
-        elif type == "dftrain":
-            return pd.concat([self.X_train, self.y_train], axis=1)
-        elif type == "dfvalid":
-            return pd.concat([self.X_valid, self.y_valid], axis=1)
-        elif type == "dftest":
-            return pd.concat([self.X_test, self.y_test], axis=1)
+        elif type in ["dftrain", "dfvalid", "dftest"]:
+            type = f"{type}".replace("df", "")
+            return pd.concat([getattr(self, f"X_{type}"), getattr(self, f"y_{type}")], axis=1)
 
         else:
             try:
@@ -1641,7 +1719,7 @@ class DataFactory(ABC):
                         train_size=train_size,
                         shuffle=shuffle,
                         stratify=self.y if stratify else None,
-                        random_state=self.options["random_state"],
+                        random_state=self.kwargs["random_state"],
                     )
                 else:
                     self.X_train = self.X[:train_index]
@@ -1721,7 +1799,7 @@ class DataFactory(ABC):
                         train_size=valid_size,
                         shuffle=shuffle,
                         stratify=self.y_test if stratify else None,
-                        random_state=self.options["random_state"],
+                        random_state=self.kwargs["random_state"],
                     )
                 else:
                     self.X_valid = self.X_test[:valid_index]
@@ -2629,13 +2707,22 @@ class DataFactory(ABC):
         self.logger.info(f"Columns:   {columns}")
         self.logger.info(f"Transformer: {method}")
 
-        # if pos_label is not None:
-        #     y[y != pos_label] = 0
-        #     y[y == pos_label] = 1
-        # el
-
         transformer = None
-        if method == "LBinarizer":
+        if method == "PosLabel" and pos_label is not None:
+            self.logger.info(f"Pos Label: {pos_label}")
+
+            X = self.get_data(self.data)
+            X = X[columns].copy(deep=True)
+            X[X != pos_label] = 0
+            X[X == pos_label] = 1
+            X = X.astype("int")
+            if inplace:
+                self.df[columns] = X
+            else:
+                display(X)
+            return
+
+        elif method == "LBinarizer":
             from sklearn.preprocessing import LabelBinarizer
 
             transformer = LabelBinarizer(**kwargs)
@@ -2696,7 +2783,9 @@ class DataFactory(ABC):
             column = columns
             if method in ["cut", "qcut", "boxcox", "yeojohnson"] and len(columns) == 1:
                 column = columns[0]
-            if method == "cut":
+            if method == "dummies":
+                df = pd.get_dummies(self.df, dummy_na=False, columns=column, drop_first=False)
+            elif method == "cut":
                 df = pd.cut(self.df[column], bins=bins, labels=np.arange(bins))
             elif method == "qcut":
                 df = pd.qcut(self.df[column], q=bins, labels=np.arange(bins))
@@ -2726,12 +2815,16 @@ class DataFactory(ABC):
                 raise ValueError(f"Invalid method: {method}")
 
             df = convert_data(df, "dataframe")
-            df.columns = [f"{c}_{method}" for c in df.columns]
+            if method != "dummies":
+                df.columns = [f"{c}_{method}" for c in df.columns]
 
             if inplace:
                 if replace:
-                    self.df.drop(columns=columns, inplace=True)
-                self.df = pd.concat([self.df, df], axis=1)
+                    self.df.drop(columns=column, inplace=True)
+                if method != "dummies":
+                    self.df = pd.concat([self.df, df], axis=1)
+                else:
+                    self.df = df
             else:
                 display(df)
 
@@ -3153,11 +3246,11 @@ class DataFactory(ABC):
             fig.show()
         plt.tight_layout()
 
-    def plot_heatmap(self, vmin=None, vmax=None, size=8, title: str = ""):
+    def plot_heatmap(self, vmin=None, vmax=None, size=8, title: str = "", map=None):
         """
         Plot heatmap.
         """
-        X = self.get_data(self.data)
+        X = self.get_data(self.data) if map is None else map
 
         plt.figure(figsize=(size, size))
         fig = sns.heatmap(X, vmin=vmin, vmax=vmax, cmap="coolwarm", linewidths=0.5, annot=True)
@@ -3176,10 +3269,18 @@ class DataFactory(ABC):
         :param str kind: Plot type ('scatter', 'kde', 'hist', 'hex', 'reg', 'resid')
         """
         X = self.get_data(self.data)
+        y = None
         c0, c1 = self.get_column([c0, c1])
 
-        plt.figure()
-        fig = sns.jointplot(data=X, x=c0, y=c1, hue=by, kind=kind)
+        if self.options["backend"] == "yellowbrick":
+            from yellowbrick.features import JointPlotVisualizer
+
+            visualizer = JointPlotVisualizer(columns=[c0, c1])
+            visualizer.fit_transform(X, y)
+            visualizer.show()
+        else:
+            plt.figure()
+            fig = sns.jointplot(data=X, x=c0, y=c1, hue=by, kind=kind)
 
         if hasattr(fig, "show"):
             fig.show()
@@ -3205,6 +3306,49 @@ class DataFactory(ABC):
             fig = sns.pairplot(data=X, vars=columns, diag_kind=kind, hue=by, corner=True, height=2)
         else:
             fig = pd.plotting.scatter_matrix(X, diagonal=kind)
+
+        if hasattr(fig, "show"):
+            fig.show()
+        plt.tight_layout()
+
+    def plot_3d(self, c0: Union[int, str], c1: Union[int, str], c2: Union[int, str], by: str = None):
+        """
+        Plot 3D.
+
+        :param Union[int, str] c0: Column name
+        :param Union[int, str] c1: Column name
+        :param Union[int, str] c2: Column name
+        :param str by: Column name to group-by
+        """
+        X, y = self.get_data(self.data_Xy)
+        c0, c1, c2 = self.get_column([c0, c1, c2])
+
+        if self.options["backend"] == "plotly":
+            fig = px.scatter_3d(X, x=c0, y=c1, z=c2, color=by)
+        # else:
+        #     fig = plt.figure()
+        #     ax = fig.add_subplot(111, projection="3d")
+        #
+        #     for species, irissubset in iris.groupby("Name"):
+        #         ax.scatter(
+        #             X[c0],
+        #             X[c1],
+        #             X[c2],
+        #             label=species,
+        #         )
+        #
+        #     ax.set_xlabel(c0)
+        #     ax.set_ylabel(c1)
+        #     ax.set_zlabel(c2)
+        #     ax.legend(loc=2)
+        #
+        #     x, y, z = axes3d.get_test_data(0.1)
+        #
+        #     fig = plt.figure()
+        #     ax = fig.add_subplot(111, projection="3d")
+        #     ax.plot_wireframe(x, y, z)
+        #     ax.plot_surface(x, y, z, cmap="viridis")
+        #     ax.contourf(x, y, z, 100)
 
         if hasattr(fig, "show"):
             fig.show()
@@ -3402,7 +3546,7 @@ class DataFactory(ABC):
         if by == "label":
             by = self.label
         if path is None:
-            path = self.get_types("object")
+            path = self.get_columns("object")
 
         fig = px.sunburst(X, path=path, color=by)
 
@@ -3420,7 +3564,6 @@ class DataFactory(ABC):
         :param str by: Column name to group-by
         """
         X = self.get_data(self.data)
-
         c0, c1, c2 = self.get_column([c0, c1, c2])
 
         fig = px.scatter_ternary(X, a=c0, b=c1, c=c2, color=by)
@@ -3437,7 +3580,7 @@ class DataFactory(ABC):
         if by == "label":
             by = self.label
         if path is None:
-            path = self.get_types("object")
+            path = self.get_columns("object")
 
         fig = px.treemap(X, path=path, color=by)
 
